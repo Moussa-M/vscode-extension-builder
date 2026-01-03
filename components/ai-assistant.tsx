@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import {
   Sparkles,
   Send,
@@ -29,6 +29,7 @@ interface AiAssistantProps {
   generatedCode: Record<string, string>
   onGenerate: (code: Record<string, string>, config?: Partial<ExtensionConfig>) => void
   onConfigUpdate: (config: ExtensionConfig) => void
+  onStreamingUpdate?: (file: string | null, content: string) => void
 }
 
 interface GenerationResult {
@@ -36,6 +37,7 @@ interface GenerationResult {
   files: Record<string, string>
   commands?: string[]
   activationEvents?: string[]
+  extractedConfig?: Partial<ExtensionConfig>
 }
 
 interface Message {
@@ -45,102 +47,63 @@ interface Message {
   isGenerating?: boolean
 }
 
-function FileGenerationAnimation({
-  files,
-  isComplete,
+function StreamingFileDisplay({
+  currentFile,
+  content,
+  allFiles,
   onFileClick,
 }: {
-  files: string[]
-  isComplete: boolean
+  currentFile: string | null
+  content: string
+  allFiles: string[]
   onFileClick?: (file: string) => void
 }) {
-  const [visibleFiles, setVisibleFiles] = useState<string[]>([])
-  const [completedFiles, setCompletedFiles] = useState<Set<string>>(new Set())
-  const animatedRef = useRef<Set<string>>(new Set())
-
-  useEffect(() => {
-    if (files.length === 0) return
-
-    // Only animate new files that haven't been animated yet
-    files.forEach((file, index) => {
-      if (animatedRef.current.has(file)) return
-      animatedRef.current.add(file)
-
-      setTimeout(() => {
-        setVisibleFiles((prev) => {
-          if (prev.includes(file)) return prev
-          return [...prev, file]
-        })
-
-        setTimeout(() => {
-          setCompletedFiles((prev) => new Set([...prev, file]))
-        }, 400)
-      }, index * 120)
-    })
-  }, [files])
-
-  // Reset when files array changes completely (new generation)
-  useEffect(() => {
-    if (files.length === 0) {
-      setVisibleFiles([])
-      setCompletedFiles(new Set())
-      animatedRef.current = new Set()
-    }
-  }, [files.length === 0])
-
-  const getFileIcon = (filename: string) => {
-    if (filename.endsWith(".json")) return "{ }"
-    if (filename.endsWith(".ts") || filename.endsWith(".tsx")) return "TS"
-    if (filename.endsWith(".md")) return "MD"
-    if (filename.startsWith(".")) return "•"
-    return "📄"
-  }
-
-  const getFileColor = (filename: string) => {
-    if (filename.endsWith(".json")) return "text-yellow-500"
-    if (filename.endsWith(".ts") || filename.endsWith(".tsx")) return "text-blue-500"
-    if (filename.endsWith(".md")) return "text-emerald-500"
-    if (filename.includes("extension")) return "text-purple-500"
-    return "text-muted-foreground"
-  }
-
   return (
-    <div className="space-y-1.5">
-      {visibleFiles.map((file) => {
-        const isCompleted = completedFiles.has(file) || isComplete
+    <div className="space-y-2">
+      {allFiles.map((file) => {
+        const isActive = file === currentFile
+        const isComplete = !isActive && allFiles.indexOf(file) < allFiles.indexOf(currentFile || "")
         return (
           <div
             key={file}
-            className={cn(
-              "flex items-center gap-2 p-2 rounded-md cursor-pointer hover:bg-secondary/50",
-              "transform transition-all duration-300 ease-out",
-              isCompleted ? "bg-secondary/30 opacity-100 translate-x-0" : "bg-secondary/10 opacity-90",
-            )}
             onClick={() => onFileClick?.(file)}
+            className={cn(
+              "flex items-center gap-2 p-2 rounded-md cursor-pointer transition-all duration-200",
+              isActive ? "bg-yellow-500/20 border border-yellow-500/30" : "bg-secondary/30 hover:bg-secondary/50",
+            )}
           >
             <div
               className={cn(
-                "w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold transition-all duration-300",
-                isCompleted ? "bg-primary/20" : "bg-muted",
-                getFileColor(file),
+                "w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold",
+                isActive
+                  ? "bg-yellow-500/30 text-yellow-400"
+                  : isComplete
+                    ? "bg-green-500/20 text-green-400"
+                    : "bg-muted text-muted-foreground",
               )}
             >
-              {isCompleted ? <Check className="w-3 h-3 text-green-500" /> : <span>{getFileIcon(file)}</span>}
+              {isComplete ? (
+                <Check className="w-3 h-3" />
+              ) : isActive ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                "?"
+              )}
             </div>
             <span
               className={cn(
-                "text-sm font-mono flex-1 transition-colors duration-300",
-                isCompleted ? "text-foreground" : "text-muted-foreground",
+                "text-sm font-mono flex-1",
+                isActive ? "text-yellow-300" : isComplete ? "text-foreground" : "text-muted-foreground",
               )}
             >
               {file}
             </span>
-            {isCompleted && (
-              <Badge variant="outline" className="text-[10px] h-5">
-                Ready
+            {isActive && <span className="text-[10px] text-yellow-400">{content.length} chars</span>}
+            {isComplete && (
+              <Badge variant="outline" className="text-[10px] h-5 text-green-400 border-green-500/30">
+                Done
               </Badge>
             )}
-            {!isCompleted && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
           </div>
         )
       })}
@@ -193,12 +156,21 @@ const scratchSuggestions = [
   "Build a workspace switcher with recent projects",
 ]
 
-export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerate, onConfigUpdate }: AiAssistantProps) {
+export function AiAssistant({
+  config,
+  selectedTemplate,
+  generatedCode,
+  onGenerate,
+  onConfigUpdate,
+  onStreamingUpdate,
+}: AiAssistantProps) {
   const [prompt, setPrompt] = useState("")
   const [isGenerating, setIsGenerating] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [mode, setMode] = useState<"add-feature" | "generate-scratch">("add-feature")
-  const [generatingFiles, setGeneratingFiles] = useState<string[]>([])
+  const [streamingFiles, setStreamingFiles] = useState<string[]>([])
+  const [currentStreamingFile, setCurrentStreamingFile] = useState<string | null>(null)
+  const [currentStreamingContent, setCurrentStreamingContent] = useState("")
   const [generationStage, setGenerationStage] = useState("")
   const [generationProgress, setGenerationProgress] = useState(0)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -215,48 +187,307 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
   const parseAIResponse = (text: string): GenerationResult | null => {
     try {
       let cleaned = text.trim()
+
+      // Remove markdown code blocks if present
       if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7)
-      if (cleaned.startsWith("```")) cleaned = cleaned.slice(3)
+      else if (cleaned.startsWith("```")) cleaned = cleaned.slice(3)
       if (cleaned.endsWith("```")) cleaned = cleaned.slice(0, -3)
       cleaned = cleaned.trim()
 
-      const parsed = JSON.parse(cleaned)
-      return {
-        message: parsed.message || "Code generated successfully",
-        files: parsed.files || {},
-        commands: parsed.commands || [],
-        activationEvents: parsed.activationEvents || [],
+      // Try to find JSON object boundaries
+      const firstBrace = cleaned.indexOf("{")
+      const lastBrace = cleaned.lastIndexOf("}")
+
+      if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        console.log("[v0] No valid JSON boundaries found")
+        return null
       }
-    } catch {
-      return null
+
+      // Extract just the JSON part
+      cleaned = cleaned.slice(firstBrace, lastBrace + 1)
+
+      // Try parsing directly first
+      try {
+        const parsed = JSON.parse(cleaned)
+        return processParseResult(parsed)
+      } catch (directError) {
+        console.log("[v0] Direct parse failed, trying repairs...")
+      }
+
+      // Try to repair common JSON issues
+      // The AI often produces unescaped characters in string values
+      let repaired = cleaned
+
+      // Fix: Replace actual newlines/tabs inside strings with escaped versions
+      // This is tricky because we need to identify when we're inside a string
+      repaired = repairJsonStrings(repaired)
+
+      try {
+        const parsed = JSON.parse(repaired)
+        return processParseResult(parsed)
+      } catch (repairedError) {
+        console.log("[v0] Repaired parse failed:", (repairedError as Error).message?.slice(0, 100))
+      }
+
+      // Final fallback: extract files using a state machine parser
+      return extractFilesWithStateMachine(text)
+    } catch (e) {
+      console.log("[v0] JSON parse error:", (e as Error).message?.slice(0, 100))
+      return extractFilesWithStateMachine(text)
     }
   }
 
-  const simulateProgress = () => {
-    const stages = [
-      { stage: "Analyzing requirements...", duration: 800 },
-      { stage: "Designing architecture...", duration: 1200 },
-      { stage: "Generating code...", duration: 2000 },
-      { stage: "Creating files...", duration: 1500 },
-      { stage: "Finalizing extension...", duration: 1000 },
-    ]
+  const repairJsonStrings = (json: string): string => {
+    let result = ""
+    let inString = false
+    let escapeNext = false
 
-    stages.forEach((s, index) => {
-      setTimeout(
-        () => {
-          setGenerationStage(s.stage)
-          setGenerationProgress(Math.min((index + 1) * 20, 95))
-        },
-        stages.slice(0, index).reduce((acc, st) => acc + st.duration, 0),
-      )
-    })
+    for (let i = 0; i < json.length; i++) {
+      const char = json[i]
+
+      if (escapeNext) {
+        result += char
+        escapeNext = false
+        continue
+      }
+
+      if (char === "\\") {
+        escapeNext = true
+        result += char
+        continue
+      }
+
+      if (char === '"') {
+        inString = !inString
+        result += char
+        continue
+      }
+
+      if (inString) {
+        // Escape problematic characters inside strings
+        if (char === "\n") {
+          result += "\\n"
+        } else if (char === "\r") {
+          result += "\\r"
+        } else if (char === "\t") {
+          result += "\\t"
+        } else {
+          result += char
+        }
+      } else {
+        result += char
+      }
+    }
+
+    return result
   }
+
+  const processParseResult = (parsed: Record<string, unknown>): GenerationResult | null => {
+    if (!parsed.files || typeof parsed.files !== "object") {
+      console.log("[v0] Parsed JSON missing files object")
+      return null
+    }
+
+    let extractedConfig: Partial<ExtensionConfig> | undefined
+    const files = parsed.files as Record<string, string>
+
+    if (files["package.json"]) {
+      try {
+        const pkgJson = JSON.parse(files["package.json"])
+        extractedConfig = {
+          name: pkgJson.name,
+          displayName: pkgJson.displayName,
+          description: pkgJson.description,
+          publisher: pkgJson.publisher,
+          version: pkgJson.version,
+          category: pkgJson.categories?.[0] || "Other",
+          activationEvents: pkgJson.activationEvents || [],
+          contributes: pkgJson.contributes || {},
+        }
+      } catch {
+        console.log("[v0] Failed to parse package.json for config extraction")
+      }
+    }
+
+    return {
+      message: (parsed.message as string) || "Code generated successfully",
+      files,
+      commands: (parsed.commands as string[]) || [],
+      activationEvents: (parsed.activationEvents as string[]) || [],
+      extractedConfig,
+    }
+  }
+
+  const extractFilesWithStateMachine = (text: string): GenerationResult | null => {
+    const files: Record<string, string> = {}
+
+    // Find "files": { in the text
+    const filesStart = text.indexOf('"files"')
+    if (filesStart === -1) {
+      console.log("[v0] No files key found in response")
+      return null
+    }
+
+    // Find the opening brace after "files":
+    const braceStart = text.indexOf("{", filesStart)
+    if (braceStart === -1) return null
+
+    let pos = braceStart + 1
+    let depth = 1
+    let currentKey = ""
+    let currentValue = ""
+    let inKey = false
+    let inValue = false
+    let escapeNext = false
+
+    while (pos < text.length && depth > 0) {
+      const char = text[pos]
+
+      if (escapeNext) {
+        if (inValue) currentValue += char
+        escapeNext = false
+        pos++
+        continue
+      }
+
+      if (char === "\\") {
+        escapeNext = true
+        if (inValue) currentValue += char
+        pos++
+        continue
+      }
+
+      if (char === '"') {
+        if (!inKey && !inValue) {
+          // Starting a key or value
+          const colonPos = text.indexOf(":", pos)
+          const commaPos = text.indexOf(",", pos)
+          const bracePos = text.indexOf("}", pos)
+
+          // If colon comes before comma/brace, this is a key
+          if (colonPos !== -1 && (commaPos === -1 || colonPos < commaPos) && (bracePos === -1 || colonPos < bracePos)) {
+            inKey = true
+            currentKey = ""
+          } else {
+            inValue = true
+            currentValue = ""
+          }
+        } else if (inKey) {
+          inKey = false
+        } else if (inValue) {
+          inValue = false
+          // Save the file
+          if (currentKey && currentValue !== undefined) {
+            // Unescape the content
+            const unescaped = currentValue
+              .replace(/\\n/g, "\n")
+              .replace(/\\t/g, "\t")
+              .replace(/\\r/g, "\r")
+              .replace(/\\"/g, '"')
+              .replace(/\\\\/g, "\\")
+            files[currentKey] = unescaped
+          }
+          currentKey = ""
+          currentValue = ""
+        }
+      } else if (inKey) {
+        currentKey += char
+      } else if (inValue) {
+        currentValue += char
+      } else if (char === "{") {
+        depth++
+      } else if (char === "}") {
+        depth--
+      }
+
+      pos++
+    }
+
+    if (Object.keys(files).length === 0) {
+      console.log("[v0] State machine extraction found no files")
+      return null
+    }
+
+    console.log("[v0] State machine extracted", Object.keys(files).length, "files")
+
+    // Try to extract message
+    const messageMatch = text.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+    const message = messageMatch
+      ? messageMatch[1].replace(/\\"/g, '"').replace(/\\n/g, " ")
+      : "Code generated successfully"
+
+    // Extract config from package.json if available
+    let extractedConfig: Partial<ExtensionConfig> | undefined
+    if (files["package.json"]) {
+      try {
+        const pkgJson = JSON.parse(files["package.json"])
+        extractedConfig = {
+          name: pkgJson.name,
+          displayName: pkgJson.displayName,
+          description: pkgJson.description,
+          publisher: pkgJson.publisher,
+          version: pkgJson.version,
+          category: pkgJson.categories?.[0] || "Other",
+          activationEvents: pkgJson.activationEvents || [],
+          contributes: pkgJson.contributes || {},
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
+    return {
+      message,
+      files,
+      commands: [],
+      activationEvents: [],
+      extractedConfig,
+    }
+  }
+
+  const extractPartialFiles = useCallback(
+    (text: string): { files: string[]; currentFile: string | null; currentContent: string } => {
+      const files: string[] = []
+      let currentFile: string | null = null
+      let currentContent = ""
+
+      // Match complete file entries
+      const completeFileRegex = /"([^"]+\.(ts|tsx|json|md|gitignore|vscodeignore|Makefile))":\s*"((?:[^"\\]|\\.)*)"/g
+      let match
+      while ((match = completeFileRegex.exec(text)) !== null) {
+        if (!files.includes(match[1])) {
+          files.push(match[1])
+        }
+      }
+
+      // Find the currently streaming file (incomplete)
+      const incompleteFileRegex = /"([^"]+\.(ts|tsx|json|md|gitignore|vscodeignore|Makefile))":\s*"((?:[^"\\]|\\.)*)$/
+      const incompleteMatch = text.match(incompleteFileRegex)
+      if (incompleteMatch) {
+        currentFile = incompleteMatch[1]
+        // Unescape the content
+        currentContent = incompleteMatch[3]
+          .replace(/\\n/g, "\n")
+          .replace(/\\t/g, "\t")
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, "\\")
+        if (!files.includes(currentFile)) {
+          files.push(currentFile)
+        }
+      }
+
+      return { files, currentFile, currentContent }
+    },
+    [],
+  )
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return
 
     setIsGenerating(true)
-    setGeneratingFiles([])
+    setStreamingFiles([])
+    setCurrentStreamingFile(null)
+    setCurrentStreamingContent("")
     setGenerationStage("Starting generation...")
     setGenerationProgress(5)
 
@@ -264,7 +495,6 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
     const assistantMessage: Message = { role: "assistant", content: "", isGenerating: true }
     setMessages((prev) => [...prev, userMessage, assistantMessage])
 
-    simulateProgress()
     abortControllerRef.current = new AbortController()
 
     try {
@@ -286,9 +516,11 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       let fullText = ""
-      const foundFiles = new Set<string>()
 
       if (reader) {
+        setGenerationStage("Generating code...")
+        setGenerationProgress(20)
+
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
@@ -296,22 +528,25 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
           const chunk = decoder.decode(value, { stream: true })
           fullText += chunk
 
-          // Extract file names as they appear
-          const fileMatches = fullText.match(/"([^"]+\.(ts|tsx|json|md|gitignore|vscodeignore))":/g)
-          if (fileMatches) {
-            const files = fileMatches.map((m) => m.replace(/["':]/g, ""))
-            files.forEach((f) => {
-              if (!foundFiles.has(f)) {
-                foundFiles.add(f)
-                setGeneratingFiles((prev) => [...prev, f])
-              }
-            })
+          const { files, currentFile, currentContent } = extractPartialFiles(fullText)
+
+          if (files.length > 0) {
+            setStreamingFiles(files)
+            setGenerationProgress(Math.min(20 + files.length * 10, 90))
+          }
+
+          if (currentFile) {
+            setCurrentStreamingFile(currentFile)
+            setCurrentStreamingContent(currentContent)
+            setGenerationStage(`Writing ${currentFile}...`)
+            onStreamingUpdate?.(currentFile, currentContent)
           }
         }
       }
 
       setGenerationProgress(100)
       setGenerationStage("Complete!")
+      onStreamingUpdate?.(null, "")
 
       const result = parseAIResponse(fullText)
 
@@ -329,7 +564,7 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
           ),
         )
 
-        onGenerate(result.files)
+        onGenerate(result.files, result.extractedConfig)
 
         if (result.commands?.length || result.activationEvents?.length) {
           const existingCommands = (config.contributes?.commands as Array<{ command: string; title: string }>) || []
@@ -381,21 +616,27 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
       }
     } finally {
       setIsGenerating(false)
-      setGeneratingFiles([])
+      setStreamingFiles([])
+      setCurrentStreamingFile(null)
+      setCurrentStreamingContent("")
       setGenerationStage("")
       setGenerationProgress(0)
       setPrompt("")
       abortControllerRef.current = null
+      onStreamingUpdate?.(null, "")
     }
   }
 
   const handleCancel = () => {
     abortControllerRef.current?.abort()
     setIsGenerating(false)
-    setGeneratingFiles([])
+    setStreamingFiles([])
+    setCurrentStreamingFile(null)
+    setCurrentStreamingContent("")
     setGenerationStage("")
     setGenerationProgress(0)
     setMessages((prev) => prev.slice(0, -1))
+    onStreamingUpdate?.(null, "")
   }
 
   const suggestions = mode === "generate-scratch" ? scratchSuggestions : featureSuggestions
@@ -491,27 +732,42 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
                     {msg.isGenerating ? (
                       <div className="space-y-4">
                         <GenerationProgress stage={generationStage} progress={generationProgress} />
-                        {generatingFiles.length > 0 && (
+                        {streamingFiles.length > 0 && (
                           <div className="mt-4">
                             <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
                               <FileCode className="w-3 h-3" />
-                              Generating files...
+                              Generating {streamingFiles.length} files...
                             </p>
-                            <FileGenerationAnimation files={generatingFiles} isComplete={false} />
+                            <StreamingFileDisplay
+                              currentFile={currentStreamingFile}
+                              content={currentStreamingContent}
+                              allFiles={streamingFiles}
+                            />
                           </div>
                         )}
                       </div>
+                    ) : msg.role === "user" ? (
+                      <p className="text-sm text-foreground/70 truncate max-w-full">
+                        {msg.content.length > 60 ? `${msg.content.slice(0, 60)}...` : msg.content}
+                      </p>
                     ) : (
                       <>
-                        <p className="text-sm text-foreground">{msg.content}</p>
-                        {msg.files && Object.keys(msg.files).length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-border/50">
-                            <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                              <FileCode className="w-3 h-3" />
-                              {Object.keys(msg.files).length} files generated
+                        {msg.files && Object.keys(msg.files).length > 0 ? (
+                          <div className="space-y-2">
+                            <p className="text-xs text-emerald-400 flex items-center gap-1">
+                              <Check className="w-3 h-3" />
+                              Generated {Object.keys(msg.files).length} files successfully
                             </p>
-                            <FileGenerationAnimation files={Object.keys(msg.files)} isComplete={true} />
+                            <div className="flex flex-wrap gap-1.5">
+                              {Object.keys(msg.files).map((file) => (
+                                <Badge key={file} variant="secondary" className="text-[10px]">
+                                  {file}
+                                </Badge>
+                              ))}
+                            </div>
                           </div>
+                        ) : (
+                          <p className="text-sm text-foreground">{msg.content}</p>
                         )}
                       </>
                     )}
@@ -523,7 +779,7 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
           </div>
         </div>
 
-        {/* Input Area - stays at bottom */}
+        {/* Input Area */}
         <div className="space-y-3 flex-shrink-0">
           <div className="relative">
             <Textarea
@@ -550,7 +806,7 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
             {isGenerating ? (
               <Button onClick={handleCancel} variant="destructive" className="flex-1 gap-2">
                 <RefreshCw className="w-4 h-4" />
-                Cancel Generation
+                Cancel
               </Button>
             ) : (
               <Button
@@ -558,17 +814,8 @@ export function AiAssistant({ config, selectedTemplate, generatedCode, onGenerat
                 disabled={!prompt.trim()}
                 className="flex-1 gap-2 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
               >
-                {mode === "generate-scratch" ? (
-                  <>
-                    <Wand2 className="w-4 h-4" />
-                    Generate Extension
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    Add Feature
-                  </>
-                )}
+                <Send className="w-4 h-4" />
+                Generate
               </Button>
             )}
           </div>

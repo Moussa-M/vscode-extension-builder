@@ -1,8 +1,20 @@
 "use client"
 
 import type React from "react"
-import { useState, useMemo } from "react"
-import { Copy, Download, Check, FileJson, FileCode, File, Folder, ChevronRight, Sparkles, Rocket } from "lucide-react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
+import {
+  Copy,
+  Download,
+  Check,
+  FileJson,
+  FileCode,
+  File,
+  Folder,
+  ChevronRight,
+  Sparkles,
+  Rocket,
+  Pencil,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -24,6 +36,9 @@ interface CodePreviewProps {
   code: Record<string, string>
   config: ExtensionConfig
   selectedTemplate: Template | null
+  onCodeChange?: (files: Record<string, string>) => void
+  streamingFile?: string | null
+  streamingContent?: string
 }
 
 const fileIcons: Record<string, React.ReactNode> = {
@@ -155,11 +170,22 @@ function highlightCode(code: string, language: string): React.ReactNode[] {
   ))
 }
 
-export function CodePreview({ code, config, selectedTemplate }: CodePreviewProps) {
+export function CodePreview({
+  code,
+  config,
+  selectedTemplate,
+  onCodeChange,
+  streamingFile,
+  streamingContent,
+}: CodePreviewProps) {
   const [activeFile, setActiveFile] = useState("package.json")
   const [copied, setCopied] = useState(false)
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(["src", "root", ".vscode"]))
   const [publishModalOpen, setPublishModalOpen] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedContent, setEditedContent] = useState<string>("")
+
+  const codeContainerRef = useRef<HTMLDivElement>(null)
 
   const files = useMemo(() => {
     const isScratch = selectedTemplate?.id === "scratch"
@@ -198,23 +224,36 @@ export function CodePreview({ code, config, selectedTemplate }: CodePreviewProps
     }
   }, [code, config, selectedTemplate])
 
+  const handleStartEditing = useCallback(() => {
+    setEditedContent(files[activeFile] || "")
+    setIsEditing(true)
+  }, [files, activeFile])
+
+  const handleSaveEdit = useCallback(() => {
+    if (onCodeChange && editedContent !== files[activeFile]) {
+      onCodeChange({ ...code, [activeFile]: editedContent })
+    }
+    setIsEditing(false)
+  }, [onCodeChange, code, activeFile, editedContent, files])
+
+  const handleCancelEdit = useCallback(() => {
+    setIsEditing(false)
+    setEditedContent("")
+  }, [])
+
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(files[activeFile] || "")
+    const contentToCopy = isEditing ? editedContent : files[activeFile] || ""
+    await navigator.clipboard.writeText(contentToCopy)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
   const handleDownloadZip = async () => {
-    // Dynamic import JSZip
     const JSZip = (await import("jszip")).default
     const zip = new JSZip()
-
-    // Add all files to zip
     Object.entries(files).forEach(([path, content]) => {
       zip.file(path, content)
     })
-
-    // Generate and download zip
     const blob = await zip.generateAsync({ type: "blob" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -241,7 +280,11 @@ export function CodePreview({ code, config, selectedTemplate }: CodePreviewProps
 
   const fileTree = useMemo(() => {
     const tree: Record<string, string[]> = { root: [] }
-    Object.keys(files).forEach((file) => {
+    const allFiles = { ...files }
+    if (streamingFile && !allFiles[streamingFile]) {
+      allFiles[streamingFile] = streamingContent || ""
+    }
+    Object.keys(allFiles).forEach((file) => {
       const parts = file.split("/")
       if (parts.length === 1) {
         tree.root.push(file)
@@ -252,15 +295,38 @@ export function CodePreview({ code, config, selectedTemplate }: CodePreviewProps
       }
     })
     return tree
-  }, [files])
+  }, [files, streamingFile, streamingContent])
 
-  const isEmpty = Object.keys(files).length === 0
+  const isEmpty = Object.keys(files).length === 0 && !streamingFile
+
+  const displayContent = useMemo(() => {
+    if (isEditing) return editedContent
+    if (streamingFile === activeFile && streamingContent !== undefined) {
+      return streamingContent
+    }
+    return files[activeFile] || ""
+  }, [isEditing, editedContent, streamingFile, activeFile, streamingContent, files])
 
   const highlightedCode = useMemo(() => {
-    if (!files[activeFile]) return null
+    if (!displayContent) return null
     const ext = getFileExtension(activeFile)
-    return highlightCode(files[activeFile], ext)
-  }, [files, activeFile])
+    return highlightCode(displayContent, ext)
+  }, [displayContent, activeFile])
+
+  const isStreaming = streamingFile === activeFile
+
+  useEffect(() => {
+    if (isStreaming && codeContainerRef.current) {
+      codeContainerRef.current.scrollTop = codeContainerRef.current.scrollHeight
+    }
+  }, [isStreaming, streamingContent])
+
+  useEffect(() => {
+    if (streamingFile && streamingFile !== activeFile) {
+      if (isEditing) handleCancelEdit()
+      setActiveFile(streamingFile)
+    }
+  }, [streamingFile])
 
   return (
     <Card className="h-[calc(100vh-12rem)] flex flex-col overflow-hidden">
@@ -274,6 +340,25 @@ export function CodePreview({ code, config, selectedTemplate }: CodePreviewProps
           </CardTitle>
           {!isEmpty && (
             <div className="flex gap-2">
+              {!isEditing ? (
+                <Button variant="outline" size="sm" onClick={handleStartEditing} title="Edit current file">
+                  <Pencil className="w-4 h-4" />
+                </Button>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" onClick={handleCancelEdit} title="Cancel editing">
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveEdit}
+                    className="bg-green-600 hover:bg-green-700"
+                    title="Save changes"
+                  >
+                    Save
+                  </Button>
+                </>
+              )}
               <Button variant="outline" size="sm" onClick={handleCopy} title="Copy current file">
                 {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
               </Button>
@@ -335,20 +420,31 @@ export function CodePreview({ code, config, selectedTemplate }: CodePreviewProps
                           transition={{ duration: 0.15 }}
                           className={dir !== "root" ? "ml-4" : ""}
                         >
-                          {dirFiles.map((filename) => (
-                            <button
-                              key={filename}
-                              onClick={() => setActiveFile(filename)}
-                              className={`flex items-center gap-1.5 w-full px-2 py-1 text-xs rounded transition-colors ${
-                                activeFile === filename
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                              }`}
-                            >
-                              {fileIcons[getFileExtension(filename)] || <File className="w-3.5 h-3.5" />}
-                              <span className="truncate">{filename.split("/").pop()}</span>
-                            </button>
-                          ))}
+                          {dirFiles.map((filename) => {
+                            const isCurrentlyStreaming = streamingFile === filename
+                            return (
+                              <button
+                                key={filename}
+                                onClick={() => {
+                                  if (isEditing) handleCancelEdit()
+                                  setActiveFile(filename)
+                                }}
+                                className={`flex items-center gap-1.5 w-full px-2 py-1 text-xs rounded transition-colors ${
+                                  activeFile === filename
+                                    ? "bg-primary text-primary-foreground"
+                                    : isCurrentlyStreaming
+                                      ? "bg-yellow-500/20 text-yellow-300 animate-pulse"
+                                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                                }`}
+                              >
+                                {fileIcons[getFileExtension(filename)] || <File className="w-3.5 h-3.5" />}
+                                <span className="truncate">{filename.split("/").pop()}</span>
+                                {isCurrentlyStreaming && (
+                                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                                )}
+                              </button>
+                            )
+                          })}
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -358,19 +454,42 @@ export function CodePreview({ code, config, selectedTemplate }: CodePreviewProps
             </ScrollArea>
           </div>
 
-          {/* Code Content - Use highlighted code with line numbers */}
+          {/* Code Content */}
           <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
             <div className="px-4 py-2 border-b border-border/50 bg-[#161b22] flex items-center justify-between shrink-0">
-              <span className="text-xs font-mono text-muted-foreground">{activeFile}</span>
-              <span className="text-xs text-muted-foreground">
-                {(files[activeFile] || "").split("\n").length} lines
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-muted-foreground">{activeFile}</span>
+                {isEditing && (
+                  <span className="text-xs text-yellow-500 flex items-center gap-1">
+                    <Pencil className="w-3 h-3" /> Editing
+                  </span>
+                )}
+                {isStreaming && (
+                  <span className="text-xs text-yellow-400 flex items-center gap-1 animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" /> Streaming...
+                  </span>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground">{displayContent.split("\n").length} lines</span>
             </div>
-            <ScrollArea className="flex-1">
-              <pre className="p-4 text-[13px] font-mono leading-6">
-                <code>{highlightedCode}</code>
-              </pre>
-            </ScrollArea>
+
+            {isEditing ? (
+              <textarea
+                value={editedContent}
+                onChange={(e) => setEditedContent(e.target.value)}
+                className="flex-1 w-full p-4 text-[13px] font-mono leading-6 bg-[#0d1117] text-foreground/80 resize-none focus:outline-none overflow-auto"
+                spellCheck={false}
+              />
+            ) : (
+              <div className="flex-1 overflow-auto" ref={codeContainerRef}>
+                <pre className="p-4 text-[13px] font-mono leading-6 min-w-max">
+                  <code>
+                    {highlightedCode}
+                    {isStreaming && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />}
+                  </code>
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -36,6 +36,14 @@ ${Object.entries(existingFiles)
 ${
   mode === "generate-scratch"
     ? `CREATE A COMPLETE VS CODE EXTENSION from scratch based on the user's description.
+
+IMPORTANT: If the user hasn't provided a specific extension name, you MUST infer a good name from their description.
+- Analyze the user's request to understand the core functionality
+- Create a concise, descriptive kebab-case name (e.g., "code-snippets-manager", "git-commit-helper", "markdown-preview-plus")
+- The name should be memorable, descriptive, and follow VS Code Marketplace conventions
+- Also create a proper displayName (e.g., "Code Snippets Manager", "Git Commit Helper")
+- Write a compelling description that explains the extension's value proposition
+
 You MUST generate ALL of these files:
 - package.json (complete with all metadata, commands, activation events, contributes)
 - src/extension.ts (main entry point with activate/deactivate)
@@ -108,34 +116,37 @@ Ensure package.json includes:
 - scripts: compile, watch, package, lint
 - devDependencies: @types/vscode, @types/node, typescript, @vscode/vsce
 
-=== RESPONSE FORMAT ===
-You MUST respond with ONLY a valid JSON object. No markdown formatting, no code blocks, no explanations outside the JSON.
+=== CRITICAL: OUTPUT FORMAT ===
+Your response MUST be a valid JSON object that can be parsed with JSON.parse().
 
+RULES:
+1. Start IMMEDIATELY with { and end with } - NO other text before or after
+2. NO markdown code blocks (no \`\`\`json)
+3. NO preamble text like "Here's the JSON:" 
+4. NO explanation text after the JSON
+5. All string values MUST have special characters escaped:
+   - Newlines: \\n
+   - Tabs: \\t  
+   - Quotes: \\\"
+   - Backslashes: \\\\
+   - Carriage returns: \\r
+
+REQUIRED JSON STRUCTURE:
 {
-  "message": "A clear, friendly 1-2 sentence description of what was created or changed",
+  "message": "Brief description of what was generated",
   "files": {
-    "package.json": "{ complete valid JSON content }",
-    "src/extension.ts": "// Complete TypeScript content",
-    "src/services/feature.ts": "// Service/module content",
-    "Makefile": "# Makefile content",
-    "README.md": "# Markdown content",
-    "other/files.ts": "// More content as needed"
+    "package.json": "{\\"name\\": \\"example\\", ...escaped JSON content...}",
+    "src/extension.ts": "import * as vscode from 'vscode';\\n\\nexport function activate...",
+    "README.md": "# Extension Name\\n\\nDescription here..."
   },
-  "commands": ["commandName1", "commandName2"],
-  "activationEvents": ["onCommand:ext.cmd", "onStartupFinished"]
+  "commands": ["command1", "command2"],
+  "activationEvents": ["onCommand:ext.cmd"]
 }
 
-=== CRITICAL RULES ===
-- Output ONLY valid JSON - the response will be parsed with JSON.parse()
-- Escape all special characters in string values (\\n for newlines, \\" for quotes, \\\\ for backslashes, \\t for tabs)
-- Ensure all file contents are properly escaped strings
-- package.json content must be valid JSON that can be parsed
-- Include ALL necessary imports in each file - no missing dependencies
-- Every file should be complete, functional, and ready to use
-- Do NOT include any text before or after the JSON object
-- Do NOT wrap the response in markdown code blocks
+EXAMPLE of properly escaped file content:
+"src/extension.ts": "import * as vscode from 'vscode';\\n\\n/**\\n * Activates the extension\\n */\\nexport function activate(context: vscode.ExtensionContext) {\\n\\tconst disposable = vscode.commands.registerCommand('myext.hello', () => {\\n\\t\\tvscode.window.showInformationMessage('Hello!');\\n\\t});\\n\\tcontext.subscriptions.push(disposable);\\n}"
 
-Generate excellent, production-ready code that would impress a senior developer and delight users!`
+Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse() would succeed on your output.`
 
   try {
     const result = streamText({

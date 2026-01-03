@@ -24,6 +24,8 @@ export function ExtensionBuilder() {
   })
   const [generatedCode, setGeneratedCode] = useState<Record<string, string>>({})
   const [activeTab, setActiveTab] = useState<"templates" | "config" | "ai">("templates")
+  const [streamingFile, setStreamingFile] = useState<string | null>(null)
+  const [streamingContent, setStreamingContent] = useState("")
 
   useEffect(() => {
     const stored = getStoredCredentials()
@@ -71,12 +73,36 @@ export function ExtensionBuilder() {
     setConfig(newConfig)
   }
 
-  const handleAiGenerate = useCallback((code: Record<string, string>) => {
+  const handleAiGenerate = useCallback((code: Record<string, string>, extractedConfig?: Partial<ExtensionConfig>) => {
     setGeneratedCode((prev) => ({ ...prev, ...code }))
+
+    // Auto-fill config from generated package.json
+    if (extractedConfig) {
+      setConfig((prev) => ({
+        ...prev,
+        name: extractedConfig.name || prev.name,
+        displayName: extractedConfig.displayName || prev.displayName,
+        description: extractedConfig.description || prev.description,
+        publisher: extractedConfig.publisher || prev.publisher,
+        version: extractedConfig.version || prev.version,
+        category: extractedConfig.category || prev.category,
+        activationEvents: extractedConfig.activationEvents || prev.activationEvents,
+        contributes: extractedConfig.contributes || prev.contributes,
+      }))
+    }
   }, [])
 
   const handleConfigUpdate = useCallback((newConfig: ExtensionConfig) => {
     setConfig(newConfig)
+  }, [])
+
+  const handleCodeChange = useCallback((files: Record<string, string>) => {
+    setGeneratedCode(files)
+  }, [])
+
+  const handleStreamingUpdate = useCallback((file: string | null, content: string) => {
+    setStreamingFile(file)
+    setStreamingContent(content)
   }, [])
 
   return (
@@ -135,12 +161,20 @@ export function ExtensionBuilder() {
                 generatedCode={generatedCode}
                 onGenerate={handleAiGenerate}
                 onConfigUpdate={handleConfigUpdate}
+                onStreamingUpdate={handleStreamingUpdate}
               />
             )}
           </div>
 
           <div className="xl:sticky xl:top-4 h-fit min-w-0">
-            <CodePreview code={generatedCode} config={config} selectedTemplate={selectedTemplate} />
+            <CodePreview
+              code={generatedCode}
+              config={config}
+              selectedTemplate={selectedTemplate}
+              onCodeChange={handleCodeChange}
+              streamingFile={streamingFile}
+              streamingContent={streamingContent}
+            />
           </div>
         </div>
       </main>
