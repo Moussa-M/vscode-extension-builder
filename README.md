@@ -1,30 +1,30 @@
 # Vercel AI extension builder
 
-*Automatically synced with your [v0.app](https://v0.app) deployments*
+_Automatically synced with your [apertacodex.app](https://apertacodex.app) deployments_
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/apertacodex-dev/v0-vercel-ai-extension-builder)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.app-black?style=for-the-badge)](https://v0.app/chat/uGx32otIu9p)
+[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/apertacodex-dev/apertacodex-vercel-ai-extension-builder)
+[![Built with apertacodex](https://img.shields.io/badge/Built%20with-apertacodex.app-black?style=for-the-badge)](https://apertacodex.app/chat/uGx32otIu9p)
 
 ## Overview
 
-This repository will stay in sync with your deployed chats on [v0.app](https://v0.app).
-Any changes you make to your deployed app will be automatically pushed to this repository from [v0.app](https://v0.app).
+This repository will stay in sync with your deployed chats on [apertacodex.app](https://apertacodex.app).
+Any changes you make to your deployed app will be automatically pushed to this repository from [apertacodex.app](https://apertacodex.app).
 
 ## Deployment
 
 Your project is live at:
 
-**[https://vercel.com/apertacodex-dev/v0-vercel-ai-extension-builder](https://vercel.com/apertacodex-dev/v0-vercel-ai-extension-builder)**
+**[https://vercel.com/apertacodex-dev/apertacodex-vercel-ai-extension-builder](https://vercel.com/apertacodex-dev/apertacodex-vercel-ai-extension-builder)**
 
 ## Build your app
 
 Continue building your app on:
 
-**[https://v0.app/chat/uGx32otIu9p](https://v0.app/chat/uGx32otIu9p)**
+**[https://apertacodex.app/chat/uGx32otIu9p](https://apertacodex.app/chat/uGx32otIu9p)**
 
 ## How It Works
 
-1. Create and modify your project using [v0.app](https://v0.app)
-2. Deploy your chats from the v0 interface
+1. Create and modify your project using [apertacodex.app](https://apertacodex.app)
+2. Deploy your chats from the apertacodex interface
 3. Changes are automatically pushed to this repository
 4. Vercel deploys the latest version from this repository
