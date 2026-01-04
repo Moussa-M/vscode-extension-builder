@@ -1,16 +1,31 @@
-import { streamText } from "ai";
-import type { ExtensionConfig, Template } from "@/lib/types";
-import { makefile } from "@/lib/templates";
+import { streamText } from "ai"
+import type { ExtensionConfig, Template } from "@/lib/types"
+import { makefile } from "@/lib/templates"
 
 export async function POST(req: Request) {
-  const { prompt, config, template, mode, existingFiles } =
-    (await req.json()) as {
-      prompt: string;
-      config: ExtensionConfig;
-      template: Template | null;
-      mode: "add-feature" | "generate-scratch" | "modify";
-      existingFiles?: Record<string, string>;
-    };
+  const { prompt, config, template, mode, existingFiles, recoveredFiles } = (await req.json()) as {
+    prompt: string
+    config: ExtensionConfig
+    template: Template | null
+    mode: "add-feature" | "generate-scratch" | "modify"
+    existingFiles?: Record<string, string>
+    recoveredFiles?: Record<string, string>
+  }
+
+  const recoveryContext =
+    recoveredFiles && Object.keys(recoveredFiles).length > 0
+      ? `
+=== RECOVERY CONTEXT ===
+The previous generation was interrupted. The following files were already generated and saved:
+${Object.entries(recoveredFiles)
+  .map(([path, content]) => `✅ ${path} (${content.length} chars)`)
+  .join("\n")}
+
+IMPORTANT: These files are already saved. Continue generating ONLY the remaining files.
+Do NOT regenerate the files listed above unless the user specifically asks for changes.
+Focus on completing any missing files that would be needed for a complete extension.
+`
+      : ""
 
   const systemPrompt = `You are a world-class VS Code extension developer with expertise in TypeScript, the VS Code Extension API, and software architecture. You create production-ready, well-documented, and thoroughly tested VS Code extensions.
 
@@ -23,7 +38,7 @@ Category: "${config.category || "Other"}"
 Description: "${config.description || ""}"
 Base Template: ${template?.name || "Custom/Blank"}
 Mode: ${mode}
-
+${recoveryContext}
 ${
   existingFiles && Object.keys(existingFiles).length > 0
     ? `=== EXISTING PROJECT FILES ===
@@ -33,7 +48,6 @@ ${Object.entries(existingFiles)
     : "=== NO EXISTING FILES - CREATING FROM SCRATCH ==="
 }
 
-=== YOUR MISSION ===
 ${
   mode === "generate-scratch"
     ? `CREATE A COMPLETE VS CODE EXTENSION from scratch based on the user's description.
@@ -154,7 +168,7 @@ REQUIRED JSON STRUCTURE:
 EXAMPLE of properly escaped file content:
 "src/extension.ts": "import * as vscode from 'vscode';\\n\\n/**\\n * Activates the extension\\n */\\nexport function activate(context: vscode.ExtensionContext) {\\n\\tconst disposable = vscode.commands.registerCommand('myext.hello', () => {\\n\\t\\tvscode.window.showInformationMessage('Hello!');\\n\\t});\\n\\tcontext.subscriptions.push(disposable);\\n}"
 
-Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse() would succeed on your output.`;
+Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse() would succeed on your output.`
 
   try {
     const result = streamText({
@@ -165,11 +179,11 @@ Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse(
       ],
       maxTokens: 16000,
       temperature: 0.7,
-    });
+    })
 
-    return result.toTextStreamResponse();
+    return result.toTextStreamResponse()
   } catch (error) {
-    console.error("AI generation error:", error);
+    console.error("AI generation error:", error)
     return Response.json(
       {
         message: "Failed to generate code. Please try again.",
@@ -177,7 +191,7 @@ Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse(
         commands: [],
         activationEvents: [],
       },
-      { status: 500 }
-    );
+      { status: 500 },
+    )
   }
 }

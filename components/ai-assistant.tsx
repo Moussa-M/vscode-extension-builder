@@ -14,6 +14,9 @@ import {
   Terminal,
   Cpu,
   Code2,
+  AlertCircle,
+  Play,
+  RotateCcw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -30,6 +33,13 @@ interface AiAssistantProps {
   onGenerate: (code: Record<string, string>, config?: Partial<ExtensionConfig>) => void
   onConfigUpdate: (config: ExtensionConfig) => void
   onStreamingUpdate?: (allFiles: Record<string, string>, currentFile: string | null) => void
+}
+
+interface ErrorState {
+  message: string
+  partialFiles: Record<string, string>
+  lastPrompt: string
+  timestamp: number
 }
 
 interface GenerationResult {
@@ -173,6 +183,8 @@ export function AiAssistant({
   const [currentStreamingContent, setCurrentStreamingContent] = useState("")
   const [generationStage, setGenerationStage] = useState("")
   const [generationProgress, setGenerationProgress] = useState(0)
+  const [errorState, setErrorState] = useState<ErrorState | null>(null)
+  const [recoveredFiles, setRecoveredFiles] = useState<Record<string, string>>({})
   const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -509,12 +521,17 @@ export function AiAssistant({
     setCurrentStreamingContent("")
     setGenerationStage("Starting generation...")
     setGenerationProgress(5)
+    setErrorState(null)
+    setRecoveredFiles({})
 
     const userMessage: Message = { role: "user", content: prompt }
     const assistantMessage: Message = { role: "assistant", content: "", isGenerating: true }
     setMessages((prev) => [...prev, userMessage, assistantMessage])
 
     abortControllerRef.current = new AbortController()
+
+    let streamedCompletedFiles: Record<string, string> = {}
+    const currentPrompt = prompt
 
     try {
       const response = await fetch("/api/generate", {
@@ -526,6 +543,7 @@ export function AiAssistant({
           template: selectedTemplate,
           mode,
           existingFiles: mode === "add-feature" ? generatedCode : undefined,
+          recoveredFiles: Object.keys(recoveredFiles).length > 0 ? recoveredFiles : undefined,
         }),
         signal: abortControllerRef.current.signal,
       })
@@ -549,6 +567,10 @@ export function AiAssistant({
 
           const { files, currentFile, currentContent, completedFiles } = extractPartialFiles(fullText)
 
+          if (Object.keys(completedFiles).length > 0) {
+            streamedCompletedFiles = { ...streamedCompletedFiles, ...completedFiles }
+          }
+
           if (files.length > 0) {
             setStreamingFiles(files)
             setGenerationProgress(Math.min(20 + files.length * 10, 90))
@@ -570,6 +592,7 @@ export function AiAssistant({
       setGenerationProgress(100)
       setGenerationStage("Complete!")
       onStreamingUpdate?.({}, null)
+      setRecoveredFiles({})
 
       const result = parseAIResponse(fullText)
 
@@ -611,12 +634,26 @@ export function AiAssistant({
           })
         }
       } else {
+        if (Object.keys(streamedCompletedFiles).length > 0) {
+          setErrorState({
+            message: "Generated code but couldn't parse the full response.",
+            partialFiles: streamedCompletedFiles,
+            lastPrompt: currentPrompt,
+            timestamp: Date.now(),
+          })
+          onGenerate(streamedCompletedFiles)
+        }
+
         setMessages((prev) =>
           prev.map((m, i) =>
             i === prev.length - 1
               ? {
                   role: "assistant" as const,
-                  content: "Generated code but couldn't parse the response. Please try again.",
+                  content:
+                    Object.keys(streamedCompletedFiles).length > 0
+                      ? `Partially generated ${Object.keys(streamedCompletedFiles).length} file(s). You can continue or retry.`
+                      : "Generated code but couldn't parse the response. Please try again.",
+                  files: streamedCompletedFiles,
                   isGenerating: false,
                 }
               : m,
@@ -625,12 +662,26 @@ export function AiAssistant({
       }
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
+        if (Object.keys(streamedCompletedFiles).length > 0) {
+          setErrorState({
+            message: (error as Error).message || "An error occurred during generation",
+            partialFiles: streamedCompletedFiles,
+            lastPrompt: currentPrompt,
+            timestamp: Date.now(),
+          })
+          onGenerate(streamedCompletedFiles)
+        }
+
         setMessages((prev) =>
           prev.map((m, i) =>
             i === prev.length - 1
               ? {
                   role: "assistant" as const,
-                  content: "Sorry, there was an error generating the code. Please try again.",
+                  content:
+                    Object.keys(streamedCompletedFiles).length > 0
+                      ? `Error occurred but saved ${Object.keys(streamedCompletedFiles).length} file(s). You can continue from where it stopped.`
+                      : "Sorry, there was an error generating the code. Please try again.",
+                  files: streamedCompletedFiles,
                   isGenerating: false,
                 }
               : m,
@@ -647,6 +698,21 @@ export function AiAssistant({
       setPrompt("")
       abortControllerRef.current = null
       onStreamingUpdate?.(null, "")
+    }
+  }
+
+  const handleResume = () => {
+    if (errorState) {
+      setRecoveredFiles(errorState.partialFiles)
+      setPrompt(`Continue from where you stopped. Already have: ${Object.keys(errorState.partialFiles).join(", ")}`)
+      setErrorState(null)
+    }
+  }
+
+  const handleRetry = () => {
+    if (errorState) {
+      setPrompt(errorState.lastPrompt)
+      setErrorState(null)
     }
   }
 
@@ -801,6 +867,41 @@ export function AiAssistant({
                   </div>
                 ))
               )}
+              {errorState && !isGenerating && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-yellow-200 font-medium">Generation interrupted</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {Object.keys(errorState.partialFiles).length} file(s) were saved:{" "}
+                        {Object.keys(errorState.partialFiles).slice(0, 3).join(", ")}
+                        {Object.keys(errorState.partialFiles).length > 3 &&
+                          ` +${Object.keys(errorState.partialFiles).length - 3} more`}
+                      </p>
+                      <div className="flex gap-2 mt-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleResume}
+                          className="h-7 text-xs bg-transparent"
+                        >
+                          <Play className="h-3 w-3 mr-1" />
+                          Continue
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={handleRetry} className="h-7 text-xs">
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          Retry
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setErrorState(null)} className="h-7 text-xs">
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
           </div>
@@ -836,14 +937,28 @@ export function AiAssistant({
                 Cancel
               </Button>
             ) : (
-              <Button
-                onClick={handleGenerate}
-                disabled={!prompt.trim()}
-                className="flex-1 gap-2 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
-              >
-                <Send className="w-4 h-4" />
-                Generate
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleGenerate}
+                  disabled={!prompt.trim()}
+                  className="flex-1 gap-2 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                >
+                  <Send className="w-4 h-4" />
+                  Generate
+                </Button>
+                {errorState && (
+                  <Button onClick={handleResume} className="flex-1 gap-2">
+                    <RefreshCw className="w-4 h-4" />
+                    Resume
+                  </Button>
+                )}
+                {errorState && (
+                  <Button onClick={handleRetry} className="flex-1 gap-2">
+                    <RefreshCw className="w-4 h-4" />
+                    Retry
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </div>
