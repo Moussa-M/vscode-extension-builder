@@ -199,7 +199,7 @@ export function AiAssistant({
       const lastBrace = cleaned.lastIndexOf("}")
 
       if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-        console.log(" No valid JSON boundaries found")
+        console.log("[v0] No valid JSON boundaries found")
         return null
       }
 
@@ -211,7 +211,7 @@ export function AiAssistant({
         const parsed = JSON.parse(cleaned)
         return processParseResult(parsed)
       } catch (directError) {
-        console.log(" Direct parse failed, trying repairs...")
+        console.log("[v0] Direct parse failed, trying repairs...")
       }
 
       // Try to repair common JSON issues
@@ -226,13 +226,13 @@ export function AiAssistant({
         const parsed = JSON.parse(repaired)
         return processParseResult(parsed)
       } catch (repairedError) {
-        console.log(" Repaired parse failed:", (repairedError as Error).message?.slice(0, 100))
+        console.log("[v0] Repaired parse failed:", (repairedError as Error).message?.slice(0, 100))
       }
 
       // Final fallback: extract files using a state machine parser
       return extractFilesWithStateMachine(text)
     } catch (e) {
-      console.log(" JSON parse error:", (e as Error).message?.slice(0, 100))
+      console.log("[v0] JSON parse error:", (e as Error).message?.slice(0, 100))
       return extractFilesWithStateMachine(text)
     }
   }
@@ -284,7 +284,7 @@ export function AiAssistant({
 
   const processParseResult = (parsed: Record<string, unknown>): GenerationResult | null => {
     if (!parsed.files || typeof parsed.files !== "object") {
-      console.log(" Parsed JSON missing files object")
+      console.log("[v0] Parsed JSON missing files object")
       return null
     }
 
@@ -305,7 +305,7 @@ export function AiAssistant({
           contributes: pkgJson.contributes || {},
         }
       } catch {
-        console.log(" Failed to parse package.json for config extraction")
+        console.log("[v0] Failed to parse package.json for config extraction")
       }
     }
 
@@ -324,7 +324,7 @@ export function AiAssistant({
     // Find "files": { in the text
     const filesStart = text.indexOf('"files"')
     if (filesStart === -1) {
-      console.log(" No files key found in response")
+      console.log("[v0] No files key found in response")
       return null
     }
 
@@ -404,11 +404,11 @@ export function AiAssistant({
     }
 
     if (Object.keys(files).length === 0) {
-      console.log(" State machine extraction found no files")
+      console.log("[v0] State machine extraction found no files")
       return null
     }
 
-    console.log(" State machine extracted", Object.keys(files).length, "files")
+    console.log("[v0] State machine extracted", Object.keys(files).length, "files")
 
     // Try to extract message
     const messageMatch = text.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/)
@@ -555,11 +555,11 @@ export function AiAssistant({
           prev.map((m, i) =>
             i === prev.length - 1
               ? {
-                role: "assistant" as const,
-                content: result.message,
-                files: result.files,
-                isGenerating: false,
-              }
+                  role: "assistant" as const,
+                  content: result.message,
+                  files: result.files,
+                  isGenerating: false,
+                }
               : m,
           ),
         )
@@ -592,10 +592,10 @@ export function AiAssistant({
           prev.map((m, i) =>
             i === prev.length - 1
               ? {
-                role: "assistant" as const,
-                content: "Generated code but couldn't parse the response. Please try again.",
-                isGenerating: false,
-              }
+                  role: "assistant" as const,
+                  content: "Generated code but couldn't parse the response. Please try again.",
+                  isGenerating: false,
+                }
               : m,
           ),
         )
@@ -606,10 +606,10 @@ export function AiAssistant({
           prev.map((m, i) =>
             i === prev.length - 1
               ? {
-                role: "assistant" as const,
-                content: "Sorry, there was an error generating the code. Please try again.",
-                isGenerating: false,
-              }
+                  role: "assistant" as const,
+                  content: "Sorry, there was an error generating the code. Please try again.",
+                  isGenerating: false,
+                }
               : m,
           ),
         )

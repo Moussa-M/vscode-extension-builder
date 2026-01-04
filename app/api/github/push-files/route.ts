@@ -1,10 +1,10 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server"
 
 interface TreeItem {
-  path: string;
-  mode: "100644";
-  type: "blob";
-  sha: string;
+  path: string
+  mode: "100644"
+  type: "blob"
+  sha: string
 }
 
 async function pushWithGitDataApi(
@@ -13,214 +13,178 @@ async function pushWithGitDataApi(
   repo: string,
   files: Record<string, string>,
   commitMessage: string,
-  parentSha: string | null
+  parentSha: string | null,
+  treeSha: string | null,
 ) {
   // Create blobs for each file
-  const blobs: TreeItem[] = [];
+  const blobs: TreeItem[] = []
 
   for (const [path, content] of Object.entries(files)) {
-    const blobResponse = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/git/blobs`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          content: content as string,
-          encoding: "utf-8",
-        }),
-      }
-    );
+    const isBase64 = typeof content === "string" && content.startsWith("data:")
+    let blobContent = content
+    let encoding = "utf-8"
 
-    if (!blobResponse.ok) {
-      const error = await blobResponse.json();
-      throw new Error(`Failed to create blob for ${path}: ${error.message}`);
+    if (isBase64) {
+      // Extract base64 data from data URL
+      const base64Data = content.split(",")[1] || content
+      blobContent = base64Data
+      encoding = "base64"
     }
 
-    const blobData = await blobResponse.json();
+    const blobResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        content: blobContent,
+        encoding,
+      }),
+    })
+
+    if (!blobResponse.ok) {
+      const error = await blobResponse.json().catch(() => ({ message: "Unknown error" }))
+      throw new Error(`Failed to create blob for ${path}: ${error.message}`)
+    }
+
+    const blobData = await blobResponse.json()
     blobs.push({
       path: path.startsWith("/") ? path.slice(1) : path,
       mode: "100644",
       type: "blob",
       sha: blobData.sha,
-    });
+    })
   }
 
-  // Create tree
-  const treeBody: { tree: TreeItem[]; base_tree?: string } = { tree: blobs };
-  if (parentSha) {
-    treeBody.base_tree = parentSha;
+  const treeBody: { tree: TreeItem[]; base_tree?: string } = { tree: blobs }
+  if (treeSha) {
+    treeBody.base_tree = treeSha
   }
 
-  const treeResponse = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/git/trees`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify(treeBody),
-    }
-  );
+  const treeResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(treeBody),
+  })
 
   if (!treeResponse.ok) {
-    const error = await treeResponse.json();
-    throw new Error(`Failed to create tree: ${error.message}`);
+    const error = await treeResponse.json().catch(() => ({ message: "Unknown error" }))
+    throw new Error(`Failed to create tree: ${error.message}`)
   }
 
-  const treeData = await treeResponse.json();
+  const treeData = await treeResponse.json()
 
   // Create commit
   const commitBody: { message: string; tree: string; parents?: string[] } = {
     message: commitMessage || "Update VS Code Extension files",
     tree: treeData.sha,
-  };
+  }
   if (parentSha) {
-    commitBody.parents = [parentSha];
+    commitBody.parents = [parentSha]
   }
 
-  const commitResponse = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/git/commits`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify(commitBody),
-    }
-  );
+  const commitResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(commitBody),
+  })
 
   if (!commitResponse.ok) {
-    const error = await commitResponse.json();
-    throw new Error(`Failed to create commit: ${error.message}`);
+    const error = await commitResponse.json().catch(() => ({ message: "Unknown error" }))
+    throw new Error(`Failed to create commit: ${error.message}`)
   }
 
-  const commitData = await commitResponse.json();
-  return commitData;
-}
-
-async function initializeEmptyRepo(
-  headers: Record<string, string>,
-  owner: string,
-  repo: string
-) {
-  const putResponse = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/README.md`,
-    {
-      method: "PUT",
-      headers,
-      body: JSON.stringify({
-        message: "Initialize repository",
-        content: Buffer.from(
-          "# VS Code Extension\n\nGenerated with VS Code Extension Builder"
-        ).toString("base64"),
-      }),
-    }
-  );
-
-  if (!putResponse.ok) {
-    const error = await putResponse.json();
-    throw new Error(`Failed to initialize repo: ${error.message}`);
-  }
-
-  const putData = await putResponse.json();
-  return putData.commit.sha;
+  const commitData = await commitResponse.json()
+  return commitData
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { token, owner, repo, files, commitMessage, isEmpty } =
-      await req.json();
+    const { token, owner, repo, files, commitMessage } = await req.json()
 
     if (!token || !owner || !repo || !files) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
     const headers = {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
       "Content-Type": "application/json",
-    };
+    }
 
-    let baseSha: string | null = null;
-    let branch = "main";
+    let commitSha: string | null = null
+    let treeSha: string | null = null
+    let branch = "main"
 
-    // Try to get the latest commit SHA
-    if (!isEmpty) {
-      for (const b of ["main", "master"]) {
-        const refResponse = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${b}`,
-          {
-            headers,
-          }
-        );
+    for (const b of ["main", "master"]) {
+      const refResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${b}`, {
+        headers,
+      })
 
-        if (refResponse.ok) {
-          const refData = await refResponse.json();
-          baseSha = refData.object.sha;
-          branch = b;
-          break;
+      if (refResponse.ok) {
+        const refData = await refResponse.json()
+        commitSha = refData.object.sha
+        branch = b
+
+        // Get the tree SHA from the commit
+        const commitResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${commitSha}`, {
+          headers,
+        })
+
+        if (commitResponse.ok) {
+          const commitData = await commitResponse.json()
+          treeSha = commitData.tree.sha
         }
+        break
       }
     }
 
-    if (!baseSha) {
+    if (!commitSha) {
       try {
-        baseSha = await initializeEmptyRepo(headers, owner, repo);
-        // Wait for GitHub to process
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const commitData = await pushWithGitDataApi(headers, owner, repo, files, commitMessage, null, null)
+
+        // Create the main branch ref
+        const refResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            ref: "refs/heads/main",
+            sha: commitData.sha,
+          }),
+        })
+
+        if (!refResponse.ok) {
+          const error = await refResponse.json().catch(() => ({ message: "Unknown error" }))
+          return NextResponse.json({ error: `Failed to create branch: ${error.message}` }, { status: 500 })
+        }
+
+        return NextResponse.json({
+          success: true,
+          commit: {
+            sha: commitData.sha,
+            url: `https://github.com/${owner}/${repo}/commit/${commitData.sha}`,
+            message: commitData.message,
+          },
+        })
       } catch (err) {
-        // If initialization fails, try without parent
-        console.log(" Could not initialize repo, trying without parent commit");
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "Failed to push files" },
+          { status: 500 },
+        )
       }
     }
 
     try {
-      const commitData = await pushWithGitDataApi(
+      const commitData = await pushWithGitDataApi(headers, owner, repo, files, commitMessage, commitSha, treeSha)
+
+      // Update the ref
+      const refResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+        method: "PATCH",
         headers,
-        owner,
-        repo,
-        files,
-        commitMessage,
-        baseSha
-      );
-
-      // Update or create ref
-      const refMethod = baseSha ? "PATCH" : "POST";
-      const refUrl = baseSha
-        ? `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`
-        : `https://api.github.com/repos/${owner}/${repo}/git/refs`;
-
-      const refBody = baseSha
-        ? { sha: commitData.sha, force: true }
-        : { ref: `refs/heads/${branch}`, sha: commitData.sha };
-
-      const refResponse = await fetch(refUrl, {
-        method: refMethod,
-        headers,
-        body: JSON.stringify(refBody),
-      });
+        body: JSON.stringify({ sha: commitData.sha, force: true }),
+      })
 
       if (!refResponse.ok) {
-        // Try the other approach
-        const altResponse = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`,
-          {
-            method: "PATCH",
-            headers,
-            body: JSON.stringify({ sha: commitData.sha, force: true }),
-          }
-        );
-
-        if (!altResponse.ok) {
-          const error = await altResponse.json().catch(() => ({}));
-          return NextResponse.json(
-            {
-              error: `Failed to update ref: ${
-                error.message || "Unknown error"
-              }`,
-            },
-            { status: 500 }
-          );
-        }
+        const error = await refResponse.json().catch(() => ({ message: "Unknown error" }))
+        return NextResponse.json({ error: `Failed to update ref: ${error.message}` }, { status: 500 })
       }
 
       return NextResponse.json({
@@ -230,18 +194,15 @@ export async function POST(req: NextRequest) {
           url: `https://github.com/${owner}/${repo}/commit/${commitData.sha}`,
           message: commitData.message,
         },
-      });
+      })
     } catch (err) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Failed to push files" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to push files" }, { status: 500 })
     }
   } catch (error) {
-    console.error("GitHub push error:", error);
+    console.error("GitHub push error:", error)
     return NextResponse.json(
-      { error: "Failed to push files" },
-      { status: 500 }
-    );
+      { error: error instanceof Error ? error.message : "Failed to push files" },
+      { status: 500 },
+    )
   }
 }

@@ -6,9 +6,11 @@ import { TemplateSelector } from "./template-selector"
 import { ConfigPanel } from "./config-panel"
 import { CodePreview } from "./code-preview"
 import { AiAssistant } from "./ai-assistant"
+import Avatar from "boring-avatars"
 import type { ExtensionConfig, Template } from "@/lib/types"
 import { templates } from "@/lib/templates"
 import { getStoredCredentials } from "@/lib/storage"
+import { colorPalettes } from "./logo-generator"
 
 export function ExtensionBuilder() {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
@@ -26,7 +28,7 @@ export function ExtensionBuilder() {
   const [activeTab, setActiveTab] = useState<"templates" | "config" | "ai">("templates")
   const [streamingFile, setStreamingFile] = useState<string | null>(null)
   const [streamingContent, setStreamingContent] = useState("")
-  const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>() // Added logo state
+  const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>()
 
   useEffect(() => {
     const stored = getStoredCredentials()
@@ -36,6 +38,80 @@ export function ExtensionBuilder() {
         publisher: prev.publisher || stored.publisherName,
       }))
     }
+  }, [])
+
+  const generateLogo = useCallback((template: Template, extensionName: string) => {
+    if (!template || template.id === "scratch") return
+
+    const suggestedLogo = template.suggestedLogo
+    const variant = suggestedLogo?.variant || "marble"
+    const paletteIndex = suggestedLogo?.palette || 0
+    const seed = suggestedLogo?.seed || extensionName || "extension"
+    const colors = colorPalettes[paletteIndex]?.colors || colorPalettes[0].colors
+
+    // Create hidden container
+    const container = document.createElement("div")
+    container.style.cssText = "position:absolute;left:-9999px;top:-9999px;"
+    document.body.appendChild(container)
+
+    // Dynamically import and render
+    import("react-dom/client").then(({ createRoot }) => {
+      const root = createRoot(container)
+      root.render(<Avatar name={seed} variant={variant} size={128} colors={colors} square />)
+
+      setTimeout(() => {
+        const svgElement = container.querySelector("svg")
+        if (!svgElement) {
+          root.unmount()
+          document.body.removeChild(container)
+          return
+        }
+
+        const clonedSvg = svgElement.cloneNode(true) as SVGElement
+        clonedSvg.setAttribute("width", "128")
+        clonedSvg.setAttribute("height", "128")
+
+        const svgData = new XMLSerializer().serializeToString(clonedSvg)
+        const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" })
+        const svgUrl = URL.createObjectURL(svgBlob)
+
+        const img = new Image()
+        img.crossOrigin = "anonymous"
+        img.onload = () => {
+          const canvas = document.createElement("canvas")
+          canvas.width = 128
+          canvas.height = 128
+          const ctx = canvas.getContext("2d")
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, 128, 128)
+            const dataUrl = canvas.toDataURL("image/png")
+            setLogoDataUrl(dataUrl)
+            // Also add to generated files
+            setGeneratedCode((prev) => {
+              const newCode = { ...prev }
+              newCode["images/icon.png"] = dataUrl
+              if (newCode["package.json"]) {
+                try {
+                  const pkg = JSON.parse(newCode["package.json"])
+                  pkg.icon = "images/icon.png"
+                  newCode["package.json"] = JSON.stringify(pkg, null, 2)
+                } catch {}
+              }
+              return newCode
+            })
+          }
+          URL.revokeObjectURL(svgUrl)
+          root.unmount()
+          document.body.removeChild(container)
+        }
+        img.onerror = () => {
+          URL.revokeObjectURL(svgUrl)
+          root.unmount()
+          document.body.removeChild(container)
+        }
+        img.src = svgUrl
+      }, 150)
+    })
   }, [])
 
   const handleTemplateSelect = (template: Template) => {
@@ -54,20 +130,23 @@ export function ExtensionBuilder() {
         contributes: {},
       })
       setGeneratedCode({})
-      setLogoDataUrl(undefined) // Clear logo on scratch
+      setLogoDataUrl(undefined)
       setActiveTab("ai")
     } else {
-      setConfig((prev) => ({
-        ...prev,
+      const newConfig = {
+        ...config,
         ...template.defaultConfig,
         name: template.suggestedConfig.name,
         displayName: template.suggestedConfig.displayName,
         description: template.suggestedConfig.description,
         publisher: stored.publisherName || template.suggestedConfig.publisher,
         category: template.suggestedConfig.category,
-      }))
+      }
+      setConfig(newConfig)
       setGeneratedCode(template.boilerplate)
       setActiveTab("config")
+
+      generateLogo(template, template.suggestedConfig.name)
     }
   }
 
@@ -78,7 +157,6 @@ export function ExtensionBuilder() {
   const handleAiGenerate = useCallback((code: Record<string, string>, extractedConfig?: Partial<ExtensionConfig>) => {
     setGeneratedCode((prev) => ({ ...prev, ...code }))
 
-    // Auto-fill config from generated package.json
     if (extractedConfig) {
       setConfig((prev) => ({
         ...prev,
@@ -108,23 +186,17 @@ export function ExtensionBuilder() {
   }, [])
 
   const handleLogoGenerated = useCallback((dataUrl: string) => {
-    setLogoDataUrl(dataUrl) // Store logo separately
-    // Also add to generated files for ZIP export
+    setLogoDataUrl(dataUrl)
     setGeneratedCode((prev) => {
       const newCode = { ...prev }
       newCode["images/icon.png"] = dataUrl
-
-      // Update package.json to reference the icon if it exists
       if (newCode["package.json"]) {
         try {
           const pkg = JSON.parse(newCode["package.json"])
           pkg.icon = "images/icon.png"
           newCode["package.json"] = JSON.stringify(pkg, null, 2)
-        } catch {
-          // Ignore parse errors
-        }
+        } catch {}
       }
-
       return newCode
     })
   }, [])
