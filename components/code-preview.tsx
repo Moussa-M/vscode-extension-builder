@@ -190,29 +190,35 @@ export function CodePreview({
       return {}
     }
 
-    const packageJson = generatePackageJson(config, selectedTemplate)
-    const extensionTs = generateExtensionTs(config, selectedTemplate)
-    const tsConfig = generateTsConfig()
-    const vscodeLaunch = generateVsCodeLaunch()
-    const readme = generateReadme(config)
-    const changelog = generateChangeLog(config)
-    const gitignore = generateGitIgnore()
-    const vscodeIgnore = generateVsCodeIgnore()
-    const license = generateLicense(config)
+    // Only generate base files if not already in code
+    const baseFiles: Record<string, string> = {}
 
-    const baseFiles: Record<string, string> = {
-      "package.json": packageJson,
-      "tsconfig.json": tsConfig,
-      ".vscode/launch.json": vscodeLaunch,
-      "README.md": readme,
-      "CHANGELOG.md": changelog,
-      "LICENSE": license,
-      ".gitignore": gitignore,
-      ".vscodeignore": vscodeIgnore,
+    if (!code["package.json"]) {
+      baseFiles["package.json"] = generatePackageJson(config, selectedTemplate)
     }
-
+    if (!code["tsconfig.json"]) {
+      baseFiles["tsconfig.json"] = generateTsConfig()
+    }
+    if (!code[".vscode/launch.json"]) {
+      baseFiles[".vscode/launch.json"] = generateVsCodeLaunch()
+    }
+    if (!code["README.md"]) {
+      baseFiles["README.md"] = generateReadme(config)
+    }
+    if (!code["CHANGELOG.md"]) {
+      baseFiles["CHANGELOG.md"] = generateChangeLog(config)
+    }
+    if (!code["LICENSE"]) {
+      baseFiles["LICENSE"] = generateLicense(config)
+    }
+    if (!code[".gitignore"]) {
+      baseFiles[".gitignore"] = generateGitIgnore()
+    }
+    if (!code[".vscodeignore"]) {
+      baseFiles[".vscodeignore"] = generateVsCodeIgnore()
+    }
     if (!code["src/extension.ts"] && !selectedTemplate?.boilerplate["src/extension.ts"]) {
-      baseFiles["src/extension.ts"] = extensionTs
+      baseFiles["src/extension.ts"] = generateExtensionTs(config, selectedTemplate)
     }
 
     return {
@@ -228,10 +234,12 @@ export function CodePreview({
 
   const handleSaveEdit = useCallback(() => {
     if (onCodeChange && editedContent !== files[activeFile]) {
-      onCodeChange({ ...code, [activeFile]: editedContent })
+      // Merge with ALL current files, not just the code prop
+      const updatedFiles = { ...files, [activeFile]: editedContent }
+      onCodeChange(updatedFiles)
     }
     setIsEditing(false)
-  }, [onCodeChange, code, activeFile, editedContent, files])
+  }, [onCodeChange, files, activeFile, editedContent])
 
   const handleCancelEdit = useCallback(() => {
     setIsEditing(false)
@@ -442,12 +450,13 @@ export function CodePreview({
                                   if (isEditing) handleCancelEdit()
                                   setActiveFile(filename)
                                 }}
-                                className={`flex items-center gap-1.5 w-full px-2 py-1 text-xs rounded transition-colors ${activeFile === filename
+                                className={`flex items-center gap-1.5 w-full px-2 py-1 text-xs rounded transition-colors ${
+                                  activeFile === filename
                                     ? "bg-primary text-primary-foreground"
                                     : isCurrentlyStreaming
                                       ? "bg-yellow-500/20 text-yellow-300 animate-pulse"
                                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                                  }`}
+                                }`}
                               >
                                 {fileIcons[getFileExtension(filename)] || <File className="w-3.5 h-3.5" />}
                                 <span className="truncate">{filename.split("/").pop()}</span>

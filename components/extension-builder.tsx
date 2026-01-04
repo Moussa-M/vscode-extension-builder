@@ -178,6 +178,24 @@ export function ExtensionBuilder() {
 
   const handleCodeChange = useCallback((files: Record<string, string>) => {
     setGeneratedCode(files)
+
+    // If package.json was edited, sync config
+    if (files["package.json"]) {
+      try {
+        const pkg = JSON.parse(files["package.json"])
+        setConfig((prev) => ({
+          ...prev,
+          name: pkg.name || prev.name,
+          displayName: pkg.displayName || prev.displayName,
+          description: pkg.description || prev.description,
+          publisher: pkg.publisher || prev.publisher,
+          version: pkg.version || prev.version,
+          category: pkg.categories?.[0] || prev.category,
+        }))
+      } catch {
+        // Invalid JSON, ignore
+      }
+    }
   }, [])
 
   const handleStreamingUpdate = useCallback((file: string | null, content: string) => {
@@ -200,6 +218,53 @@ export function ExtensionBuilder() {
       return newCode
     })
   }, [])
+
+  useEffect(() => {
+    if (Object.keys(generatedCode).length === 0) return
+
+    // Update package.json when config changes
+    setGeneratedCode((prev) => {
+      const currentPkg = prev["package.json"]
+      if (!currentPkg) return prev
+
+      try {
+        const pkg = JSON.parse(currentPkg)
+        let changed = false
+
+        if (config.name && pkg.name !== config.name) {
+          pkg.name = config.name
+          changed = true
+        }
+        if (config.displayName && pkg.displayName !== config.displayName) {
+          pkg.displayName = config.displayName
+          changed = true
+        }
+        if (config.description && pkg.description !== config.description) {
+          pkg.description = config.description
+          changed = true
+        }
+        if (config.publisher && pkg.publisher !== config.publisher) {
+          pkg.publisher = config.publisher
+          changed = true
+        }
+        if (config.version && pkg.version !== config.version) {
+          pkg.version = config.version
+          changed = true
+        }
+        if (config.category && pkg.categories?.[0] !== config.category) {
+          pkg.categories = [config.category]
+          changed = true
+        }
+
+        if (changed) {
+          return { ...prev, "package.json": JSON.stringify(pkg, null, 2) }
+        }
+        return prev
+      } catch {
+        return prev
+      }
+    })
+  }, [config.name, config.displayName, config.description, config.publisher, config.version, config.category])
 
   return (
     <div className="min-h-screen bg-background">
