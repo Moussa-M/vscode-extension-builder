@@ -23,6 +23,7 @@ import {
   Download,
   ChevronRight,
   Lightbulb,
+  Globe,
 } from "lucide-react"
 import type { ExtensionConfig } from "@/lib/types"
 import { getStoredCredentials, saveCredentials } from "@/lib/storage"
@@ -40,11 +41,13 @@ type PublishStep = "tokens" | "github" | "marketplace" | "done"
 interface PublishState {
   githubToken: string
   azureToken: string
+  openVsxToken: string
   repoName: string
   isPrivate: boolean
   publisherName: string
   createdRepo: { fullName: string; url: string; owner: string; isEmpty: boolean } | null
   publishedUrl: string | null
+  openVsxPublishedUrl: string | null
 }
 
 export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }: PublishModalProps) {
@@ -52,14 +55,17 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
   const [state, setState] = useState<PublishState>({
     githubToken: "",
     azureToken: "",
+    openVsxToken: "",
     repoName: "",
     isPrivate: false,
     publisherName: "",
     createdRepo: null,
     publishedUrl: null,
+    openVsxPublishedUrl: null,
   })
   const [showGithubToken, setShowGithubToken] = useState(false)
   const [showAzureToken, setShowAzureToken] = useState(false)
+  const [showOpenVsxToken, setShowOpenVsxToken] = useState(false)
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
@@ -72,6 +78,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       ...prev,
       githubToken: stored.githubToken || prev.githubToken,
       azureToken: stored.azureToken || prev.azureToken,
+      openVsxToken: stored.openVsxToken || prev.openVsxToken,
       publisherName: stored.publisherName || config.publisher || prev.publisherName,
       repoName: config.name || prev.repoName || "my-extension",
     }))
@@ -84,11 +91,13 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       if (
         updates.githubToken !== undefined ||
         updates.azureToken !== undefined ||
+        updates.openVsxToken !== undefined ||
         updates.publisherName !== undefined
       ) {
         saveCredentials({
           githubToken: updates.githubToken ?? prev.githubToken,
           azureToken: updates.azureToken ?? prev.azureToken,
+          openVsxToken: updates.openVsxToken ?? prev.openVsxToken,
           publisherName: updates.publisherName ?? prev.publisherName,
         })
       }
@@ -111,6 +120,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
 
   const hasGithubToken = state.githubToken.length > 0
   const hasAzureToken = state.azureToken.length > 0
+  const hasOpenVsxToken = state.openVsxToken.length > 0
 
   // Create GitHub repo
   const createGitHubRepo = useCallback(async () => {
@@ -201,7 +211,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
             repo,
             files: filesWithLogo,
             commitMessage: `feat: ${config.displayName || "VS Code Extension"} v${config.version || "0.0.1"}`,
-            isEmpty: isEmpty ?? true, // Default to true for safer handling
+            isEmpty: isEmpty ?? true,
           }),
         })
 
@@ -256,13 +266,11 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         throw new Error(data.error || "Failed to create extension package")
       }
 
-      // API now returns VSIX for manual upload
       if (data.vsixBase64) {
         setFallbackVsix(data.vsixBase64)
         setErrorSuggestion(data.suggestion || "Download the VSIX and upload it manually to the VS Marketplace")
       }
 
-      // Set a URL for the marketplace manage page
       setState((prev) => ({
         ...prev,
         publishedUrl:
@@ -275,6 +283,56 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       setLoading(null)
     }
   }, [state.azureToken, state.publisherName, config.name, filesWithLogo])
+
+  const publishToOpenVsx = useCallback(async () => {
+    if (!state.openVsxToken || !state.publisherName) {
+      setError("Open VSX token and publisher name are required")
+      return
+    }
+
+    setLoading("publishing-openvsx")
+    setError(null)
+    setErrorSuggestion(null)
+
+    try {
+      const response = await fetch("/api/openvsx/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          openVsxToken: state.openVsxToken,
+          publisher: state.publisherName,
+          extensionName: config.name || "my-extension",
+          files: filesWithLogo,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        if (data.suggestion) {
+          setErrorSuggestion(data.suggestion)
+        }
+        if (data.vsixBase64) {
+          setFallbackVsix(data.vsixBase64)
+        }
+        throw new Error(data.error || "Failed to publish to Open VSX")
+      }
+
+      setState((prev) => ({
+        ...prev,
+        openVsxPublishedUrl: data.url || `https://open-vsx.org/extension/${state.publisherName}/${config.name}`,
+      }))
+
+      // If we haven't already gone to done step, go there now
+      if (currentStep !== "done") {
+        setCurrentStep("done")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to publish to Open VSX")
+    } finally {
+      setLoading(null)
+    }
+  }, [state.openVsxToken, state.publisherName, config.name, filesWithLogo, currentStep])
 
   // Download .vsix package
   const downloadVsix = useCallback(async () => {
@@ -290,7 +348,6 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       let hasIcon = false
       let iconPath = ""
 
-      // Check for icon in package.json
       const pkgJson = filesWithLogo["package.json"]
       if (pkgJson) {
         try {
@@ -298,7 +355,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
           if (pkg.icon) {
             iconPath = pkg.icon
           }
-        } catch { }
+        } catch {}
       }
 
       for (const [path, content] of Object.entries(filesWithLogo)) {
@@ -314,7 +371,6 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         }
       }
 
-      // Add [Content_Types].xml for VSIX format
       zip.file(
         "[Content_Types].xml",
         `<?xml version="1.0" encoding="utf-8"?>
@@ -329,7 +385,6 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
 </Types>`,
       )
 
-      // Add extension.vsixmanifest with icon support
       const manifest = `<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
   <Metadata>
@@ -397,6 +452,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
     login: `vsce login ${state.publisherName || config.publisher || "<publisher>"}`,
     publish: `vsce publish`,
     publishWithToken: `vsce publish -p ${state.azureToken || "<your-pat-token>"}`,
+    openVsxPublish: `npx ovsx publish -p ${state.openVsxToken || "<your-token>"}`,
   }
 
   const isTokensStepValid = state.githubToken.length > 0 && state.publisherName.length > 0
@@ -446,37 +502,6 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-zinc-300">Azure DevOps Personal Access Token</Label>
-            <a
-              href="https://dev.azure.com/_usersSettings/tokens"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1"
-            >
-              Create Token <ExternalLink className="h-3 w-3" />
-            </a>
-          </div>
-          <div className="relative">
-            <Input
-              type={showAzureToken ? "text" : "password"}
-              value={state.azureToken}
-              onChange={(e) => updateState({ azureToken: e.target.value })}
-              placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-              className="bg-zinc-900 border-zinc-700 text-zinc-100 pr-10"
-            />
-            <button
-              type="button"
-              onClick={() => setShowAzureToken(!showAzureToken)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
-            >
-              {showAzureToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-          <p className="text-xs text-zinc-500">Required scope: Marketplace (Manage). Optional for auto-publishing.</p>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
             <Label className="text-zinc-300">
               Publisher Name <span className="text-red-400">*</span>
             </Label>
@@ -497,14 +522,95 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
           />
           <p className="text-xs text-zinc-500">Your VS Code Marketplace publisher ID</p>
         </div>
+
+        <div className="pt-4 border-t border-zinc-800">
+          <p className="text-sm font-medium text-zinc-300 mb-3">Marketplace Tokens (Optional)</p>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-zinc-300 flex items-center gap-2">
+                  <Package className="h-4 w-4 text-blue-400" />
+                  VS Code Marketplace (Azure PAT)
+                </Label>
+                <a
+                  href="https://dev.azure.com/_usersSettings/tokens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1"
+                >
+                  Create Token <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+              <div className="relative">
+                <Input
+                  type={showAzureToken ? "text" : "password"}
+                  value={state.azureToken}
+                  onChange={(e) => updateState({ azureToken: e.target.value })}
+                  placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  className="bg-zinc-900 border-zinc-700 text-zinc-100 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAzureToken(!showAzureToken)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                >
+                  {showAzureToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">Required scope: Marketplace (Manage)</p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-zinc-300 flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-green-400" />
+                  Open VSX Registry
+                </Label>
+                <a
+                  href="https://open-vsx.org/user-settings/tokens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1"
+                >
+                  Create Token <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+              <div className="relative">
+                <Input
+                  type={showOpenVsxToken ? "text" : "password"}
+                  value={state.openVsxToken}
+                  onChange={(e) => updateState({ openVsxToken: e.target.value })}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  className="bg-zinc-900 border-zinc-700 text-zinc-100 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowOpenVsxToken(!showOpenVsxToken)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                >
+                  {showOpenVsxToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">For publishing to open-vsx.org (Eclipse Foundation)</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Mode indicators */}
       <div className="flex items-center gap-2 p-3 rounded-lg bg-zinc-900/50 border border-zinc-800">
-        {state.githubToken && state.azureToken ? (
+        {state.githubToken && (state.azureToken || state.openVsxToken) ? (
           <>
             <CheckCircle2 className="h-4 w-4 text-green-500" />
-            <span className="text-sm text-green-400">Auto mode enabled - we&apos;ll handle everything</span>
+            <span className="text-sm text-green-400">
+              Auto mode enabled - Publishing to{" "}
+              {state.azureToken && state.openVsxToken
+                ? "both marketplaces"
+                : state.azureToken
+                  ? "VS Marketplace"
+                  : "Open VSX"}
+            </span>
           </>
         ) : state.githubToken ? (
           <>
@@ -551,7 +657,6 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         </div>
       </div>
 
-      {/* GitHub token warning */}
       {!hasGithubToken && (
         <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
           <p className="text-sm text-amber-400 flex items-center gap-2">
@@ -561,7 +666,6 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         </div>
       )}
 
-      {/* GitHub repo creation button */}
       <Button
         onClick={createGitHubRepo}
         disabled={!state.repoName || loading !== null}
@@ -580,7 +684,6 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         )}
       </Button>
 
-      {/* Created repo info */}
       {state.createdRepo && (
         <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 space-y-2">
           <p className="text-sm text-green-400 flex items-center gap-2">
@@ -602,61 +705,92 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
 
   const renderMarketplaceStep = () => (
     <div className="space-y-4">
-      {hasAzureToken && state.publisherName ? (
-        <>
-          <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-            <p className="text-sm text-green-400 flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              Azure PAT provided - One-click publish ready
+      <div className="p-4 rounded-lg bg-gradient-to-br from-blue-500/10 to-violet-500/10 border border-blue-500/20 space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+            <Package className="h-5 w-5 text-blue-400" />
+          </div>
+          <div>
+            <p className="font-medium">VS Code Marketplace</p>
+            <p className="text-xs text-muted-foreground">
+              {hasAzureToken ? "Ready to publish" : "Manual publishing (no Azure PAT)"}
             </p>
           </div>
-
-          <div className="p-4 rounded-lg bg-gradient-to-br from-violet-500/10 to-fuchsia-500/10 border border-violet-500/20 space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-violet-500/20 flex items-center justify-center">
-                <Rocket className="h-5 w-5 text-violet-400" />
-              </div>
-              <div>
-                <p className="font-medium">Publish to Marketplace</p>
-                <p className="text-xs text-muted-foreground">Automatically package and publish your extension</p>
-              </div>
-            </div>
-            <Button
-              onClick={publishToMarketplace}
-              disabled={loading !== null}
-              className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700"
-            >
-              {loading === "publishing" ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Publishing to Marketplace...
-                </>
-              ) : (
-                <>
-                  <Rocket className="h-4 w-4 mr-2" />
-                  Publish Now
-                </>
-              )}
-            </Button>
-          </div>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">or manually</span>
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-          <p className="text-sm text-amber-400 flex items-center gap-2">
-            <AlertCircle className="h-4 w-4" />
-            {!state.publisherName ? "Publisher name required for publishing" : "No Azure PAT - Manual publish required"}
-          </p>
         </div>
-      )}
+
+        {hasAzureToken && state.publisherName ? (
+          <Button
+            onClick={publishToMarketplace}
+            disabled={loading !== null}
+            className="w-full bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700"
+          >
+            {loading === "publishing" ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Publishing...
+              </>
+            ) : (
+              <>
+                <Rocket className="h-4 w-4 mr-2" />
+                Publish to VS Marketplace
+              </>
+            )}
+          </Button>
+        ) : (
+          <div className="text-xs text-amber-400 flex items-center gap-2">
+            <AlertCircle className="h-3 w-3" />
+            Add Azure PAT in Setup to enable auto-publish
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 rounded-lg bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20 space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+            <Globe className="h-5 w-5 text-green-400" />
+          </div>
+          <div>
+            <p className="font-medium">Open VSX Registry</p>
+            <p className="text-xs text-muted-foreground">
+              {hasOpenVsxToken ? "Ready to publish" : "Manual publishing (no token)"}
+            </p>
+          </div>
+        </div>
+
+        {hasOpenVsxToken && state.publisherName ? (
+          <Button
+            onClick={publishToOpenVsx}
+            disabled={loading !== null}
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+          >
+            {loading === "publishing-openvsx" ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Publishing...
+              </>
+            ) : (
+              <>
+                <Rocket className="h-4 w-4 mr-2" />
+                Publish to Open VSX
+              </>
+            )}
+          </Button>
+        ) : (
+          <div className="text-xs text-amber-400 flex items-center gap-2">
+            <AlertCircle className="h-3 w-3" />
+            Add Open VSX token in Setup to enable auto-publish
+          </div>
+        )}
+      </div>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-background px-2 text-muted-foreground">or download package</span>
+        </div>
+      </div>
 
       {/* Download VSIX */}
       <div className="p-4 rounded-lg bg-muted/50 space-y-3">
@@ -679,51 +813,62 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       </div>
 
       {/* Manual Publish Commands */}
-      {!hasAzureToken && (
+      {(!hasAzureToken || !hasOpenVsxToken) && (
         <div className="space-y-3">
           <p className="text-sm font-medium">Manual Publish Commands</p>
           <div className="space-y-2">
-            <div className="p-3 rounded-lg bg-muted/50 space-y-2">
-              <p className="text-xs text-muted-foreground">Login first (enter PAT when prompted):</p>
-              <div className="flex items-center gap-2 bg-background rounded px-3 py-2 font-mono text-xs">
-                <Terminal className="h-3 w-3 text-muted-foreground" />
-                <code className="flex-1">{commands.login}</code>
-                <button
-                  onClick={() => copyToClipboard(commands.login, "login")}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {copied === "login" ? (
-                    <CheckCircle2 className="h-3 w-3 text-green-400" />
-                  ) : (
-                    <Copy className="h-3 w-3" />
-                  )}
-                </button>
+            {!hasAzureToken && (
+              <div className="p-3 rounded-lg bg-muted/50 space-y-2">
+                <p className="text-xs text-muted-foreground flex items-center gap-2">
+                  <Package className="h-3 w-3 text-blue-400" />
+                  VS Marketplace (login first, then publish):
+                </p>
+                <div className="flex items-center gap-2 bg-background rounded px-3 py-2 font-mono text-xs">
+                  <Terminal className="h-3 w-3 text-muted-foreground" />
+                  <code className="flex-1">{commands.login}</code>
+                  <button
+                    onClick={() => copyToClipboard(commands.login, "login")}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {copied === "login" ? (
+                      <CheckCircle2 className="h-3 w-3 text-green-400" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="p-3 rounded-lg bg-muted/50 space-y-2">
-              <p className="text-xs text-muted-foreground">Then publish:</p>
-              <div className="flex items-center gap-2 bg-background rounded px-3 py-2 font-mono text-xs">
-                <Terminal className="h-3 w-3 text-muted-foreground" />
-                <code className="flex-1">{commands.publish}</code>
-                <button
-                  onClick={() => copyToClipboard(commands.publish, "publish")}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {copied === "publish" ? (
-                    <CheckCircle2 className="h-3 w-3 text-green-400" />
-                  ) : (
-                    <Copy className="h-3 w-3" />
-                  )}
-                </button>
+            )}
+            {!hasOpenVsxToken && (
+              <div className="p-3 rounded-lg bg-muted/50 space-y-2">
+                <p className="text-xs text-muted-foreground flex items-center gap-2">
+                  <Globe className="h-3 w-3 text-green-400" />
+                  Open VSX:
+                </p>
+                <div className="flex items-center gap-2 bg-background rounded px-3 py-2 font-mono text-xs">
+                  <Terminal className="h-3 w-3 text-muted-foreground" />
+                  <code className="flex-1">{commands.openVsxPublish}</code>
+                  <button
+                    onClick={() => copyToClipboard(commands.openVsxPublish, "openvsx")}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {copied === "openvsx" ? (
+                      <CheckCircle2 className="h-3 w-3 text-green-400" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
 
       <p className="text-xs text-muted-foreground flex items-center gap-1">
         <Circle className="h-2 w-2" />
-        For manual publishing, ensure <code className="bg-muted px-1 rounded">npm i -g @vscode/vsce</code> is installed
+        For manual publishing, ensure <code className="bg-muted px-1 rounded">npm i -g @vscode/vsce ovsx</code> is
+        installed
       </p>
     </div>
   )
@@ -735,11 +880,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       </div>
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-150">
         <h3 className="font-semibold text-lg">Extension Package Ready!</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          {fallbackVsix
-            ? "Your extension is published in the VS Marketplace"
-            : "Your extension is ready for publishing"}
-        </p>
+        <p className="text-sm text-muted-foreground mt-1">Your extension is ready for publishing</p>
       </div>
 
       {fallbackVsix && (
@@ -762,10 +903,21 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
           }
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors"
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
         >
           <Package className="h-4 w-4" />
-          View on Marketplace
+          VS Marketplace
+          <ExternalLink className="h-3 w-3" />
+        </a>
+
+        <a
+          href={state.openVsxPublishedUrl || `https://open-vsx.org/extension/${state.publisherName}/${config.name}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors"
+        >
+          <Globe className="h-4 w-4" />
+          Open VSX
           <ExternalLink className="h-3 w-3" />
         </a>
 
@@ -777,7 +929,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-muted hover:bg-muted/80 text-sm font-medium transition-colors"
           >
             <Github className="h-4 w-4" />
-            View on GitHub
+            GitHub
             <ExternalLink className="h-3 w-3" />
           </a>
         )}
@@ -801,7 +953,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
             <Rocket className="h-5 w-5 text-violet-400" />
             Publish Extension
           </DialogTitle>
-          <DialogDescription>Automate deployment to GitHub and VS Code Marketplace</DialogDescription>
+          <DialogDescription>Deploy to GitHub, VS Code Marketplace & Open VSX</DialogDescription>
         </DialogHeader>
 
         {/* Progress Steps */}
@@ -818,18 +970,20 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
                   disabled={loading !== null}
                 >
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isPast
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                      isPast
                         ? "bg-green-500/20 text-green-400"
                         : isActive
                           ? "bg-violet-500/20 text-violet-400 ring-2 ring-violet-500/50"
                           : "bg-muted text-muted-foreground"
-                      }`}
+                    }`}
                   >
                     {isPast ? <CheckCircle2 className="h-5 w-5" /> : <StepIcon className="h-5 w-5" />}
                   </div>
                   <span
-                    className={`text-xs font-medium ${isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
-                      }`}
+                    className={`text-xs font-medium ${
+                      isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
+                    }`}
                   >
                     {step.label}
                   </span>
