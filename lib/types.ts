@@ -9,6 +9,12 @@ export interface ExtensionConfig {
   contributes: Record<string, unknown>
 }
 
+export interface LogoConfig {
+  variant: "marble" | "beam" | "pixel" | "sunset" | "ring" | "bauhaus"
+  palette: number
+  seed?: string
+}
+
 export interface Template {
   id: string
   name: string
@@ -24,4 +30,5 @@ export interface Template {
     publisher: string
     category: string
   }
+  suggestedLogo?: LogoConfig
 }

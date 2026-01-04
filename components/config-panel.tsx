@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { LogoGenerator } from "./logo-generator"
 import type { ExtensionConfig, Template } from "@/lib/types"
 import { AlertCircle } from "lucide-react"
 
@@ -12,6 +13,7 @@ interface ConfigPanelProps {
   config: ExtensionConfig
   onChange: (config: ExtensionConfig) => void
   selectedTemplate: Template | null
+  onLogoGenerated?: (dataUrl: string) => void
 }
 
 const categories = [
@@ -34,7 +36,7 @@ const categories = [
   "Testing",
 ]
 
-export function ConfigPanel({ config, onChange, selectedTemplate }: ConfigPanelProps) {
+export function ConfigPanel({ config, onChange, selectedTemplate, onLogoGenerated }: ConfigPanelProps) {
   if (!selectedTemplate) {
     return (
       <Card className="border-dashed">
@@ -121,6 +123,12 @@ export function ConfigPanel({ config, onChange, selectedTemplate }: ConfigPanelP
           </div>
         </CardContent>
       </Card>
+
+      <LogoGenerator
+        extensionName={config.name}
+        suggestedLogo={selectedTemplate.suggestedLogo}
+        onLogoGenerated={onLogoGenerated}
+      />
     </div>
   )
 }

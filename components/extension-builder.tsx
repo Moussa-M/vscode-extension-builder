@@ -26,6 +26,7 @@ export function ExtensionBuilder() {
   const [activeTab, setActiveTab] = useState<"templates" | "config" | "ai">("templates")
   const [streamingFile, setStreamingFile] = useState<string | null>(null)
   const [streamingContent, setStreamingContent] = useState("")
+  const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>() // Added logo state
 
   useEffect(() => {
     const stored = getStoredCredentials()
@@ -53,6 +54,7 @@ export function ExtensionBuilder() {
         contributes: {},
       })
       setGeneratedCode({})
+      setLogoDataUrl(undefined) // Clear logo on scratch
       setActiveTab("ai")
     } else {
       setConfig((prev) => ({
@@ -105,6 +107,28 @@ export function ExtensionBuilder() {
     setStreamingContent(content)
   }, [])
 
+  const handleLogoGenerated = useCallback((dataUrl: string) => {
+    setLogoDataUrl(dataUrl) // Store logo separately
+    // Also add to generated files for ZIP export
+    setGeneratedCode((prev) => {
+      const newCode = { ...prev }
+      newCode["images/icon.png"] = dataUrl
+
+      // Update package.json to reference the icon if it exists
+      if (newCode["package.json"]) {
+        try {
+          const pkg = JSON.parse(newCode["package.json"])
+          pkg.icon = "images/icon.png"
+          newCode["package.json"] = JSON.stringify(pkg, null, 2)
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      return newCode
+    })
+  }, [])
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -152,7 +176,12 @@ export function ExtensionBuilder() {
               />
             )}
             {activeTab === "config" && (
-              <ConfigPanel config={config} onChange={handleConfigChange} selectedTemplate={selectedTemplate} />
+              <ConfigPanel
+                config={config}
+                onChange={handleConfigChange}
+                selectedTemplate={selectedTemplate}
+                onLogoGenerated={handleLogoGenerated}
+              />
             )}
             {activeTab === "ai" && (
               <AiAssistant
@@ -174,6 +203,7 @@ export function ExtensionBuilder() {
               onCodeChange={handleCodeChange}
               streamingFile={streamingFile}
               streamingContent={streamingContent}
+              logoDataUrl={logoDataUrl}
             />
           </div>
         </div>

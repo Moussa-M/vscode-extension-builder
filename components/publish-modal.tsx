@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -32,6 +32,7 @@ interface PublishModalProps {
   onOpenChange: (open: boolean) => void
   config: ExtensionConfig
   files: Record<string, string>
+  logoDataUrl?: string
 }
 
 type PublishStep = "tokens" | "github" | "marketplace" | "done"
@@ -46,7 +47,7 @@ interface PublishState {
   publishedUrl: string | null
 }
 
-export function PublishModal({ open, onOpenChange, config, files }: PublishModalProps) {
+export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }: PublishModalProps) {
   const [currentStep, setCurrentStep] = useState<PublishStep>("tokens")
   const [state, setState] = useState<PublishState>({
     githubToken: "",
@@ -159,6 +160,26 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
   }, [state.githubToken, state.repoName, state.isPrivate, config])
 
   // Push files to GitHub
+  const filesWithLogo = useMemo(() => {
+    const result = { ...files }
+    if (logoDataUrl && !result["images/icon.png"]) {
+      result["images/icon.png"] = logoDataUrl
+    }
+    // Ensure package.json has icon reference
+    if (result["package.json"] && logoDataUrl) {
+      try {
+        const pkg = JSON.parse(result["package.json"])
+        if (!pkg.icon) {
+          pkg.icon = "images/icon.png"
+          result["package.json"] = JSON.stringify(pkg, null, 2)
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    return result
+  }, [files, logoDataUrl])
+
   const pushToGitHub = useCallback(
     async (repoFullName?: string, repoOwner?: string, isEmpty?: boolean) => {
       const targetRepo = repoFullName || state.createdRepo?.fullName
@@ -178,7 +199,7 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
             token: state.githubToken,
             owner,
             repo,
-            files,
+            files: filesWithLogo,
             commitMessage: `feat: ${config.displayName || "VS Code Extension"} v${config.version || "0.0.1"}`,
             isEmpty: isEmpty ?? true, // Default to true for safer handling
           }),
@@ -197,7 +218,7 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
         setLoading(null)
       }
     },
-    [state.githubToken, state.createdRepo, files, config],
+    [state.githubToken, state.createdRepo, filesWithLogo, config],
   )
 
   const publishToMarketplace = useCallback(async () => {
@@ -219,7 +240,7 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
           azureToken: state.azureToken || "",
           publisher: state.publisherName,
           extensionName: config.name || "my-extension",
-          files,
+          files: filesWithLogo,
         }),
       })
 
@@ -242,14 +263,18 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
       }
 
       // Set a URL for the marketplace manage page
-      setState((prev) => ({ ...prev, publishedUrl: data.manualUploadUrl || `https://marketplace.visualstudio.com/manage/publishers/${state.publisherName}` }))
+      setState((prev) => ({
+        ...prev,
+        publishedUrl:
+          data.manualUploadUrl || `https://marketplace.visualstudio.com/manage/publishers/${state.publisherName}`,
+      }))
       setCurrentStep("done")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create extension package")
     } finally {
       setLoading(null)
     }
-  }, [state.azureToken, state.publisherName, config.name, files])
+  }, [state.azureToken, state.publisherName, config.name, filesWithLogo])
 
   // Download .vsix package
   const downloadVsix = useCallback(async () => {
@@ -259,13 +284,16 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
     try {
       const JSZip = (await import("jszip")).default
       const zip = new JSZip()
-
-      // Create extension folder structure
       const ext = zip.folder("extension")
       if (!ext) throw new Error("Failed to create zip")
 
-      for (const [path, content] of Object.entries(files)) {
-        ext.file(path, content)
+      for (const [path, content] of Object.entries(filesWithLogo)) {
+        if (path.endsWith(".png") && content.startsWith("data:")) {
+          const base64 = content.split(",")[1]
+          ext.file(path, base64, { base64: true })
+        } else {
+          ext.file(path, content)
+        }
       }
 
       // Add [Content_Types].xml for VSIX format
@@ -281,7 +309,7 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
       )
 
       // Add extension.vsixmanifest
-      const pkg = JSON.parse(files["package.json"] || "{}")
+      const pkg = JSON.parse(filesWithLogo["package.json"] || "{}")
       const manifest = `<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
   <Metadata>
@@ -313,7 +341,7 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
     } finally {
       setLoading(null)
     }
-  }, [files, config, state.publisherName])
+  }, [filesWithLogo, config, state.publisherName])
 
   const downloadFallbackVsix = useCallback(() => {
     if (!fallbackVsix) return
@@ -678,7 +706,9 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-150">
         <h3 className="font-semibold text-lg">Extension Package Ready!</h3>
         <p className="text-sm text-muted-foreground mt-1">
-          {fallbackVsix ? "Download your .vsix file and upload it to the VS Marketplace" : "Your extension is ready for publishing"}
+          {fallbackVsix
+            ? "Download your .vsix file and upload it to the VS Marketplace"
+            : "Your extension is ready for publishing"}
         </p>
       </div>
 
@@ -696,7 +726,10 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
 
       <div className="flex flex-col sm:flex-row gap-2 justify-center pt-4 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-300">
         <a
-          href={state.publishedUrl || `https://marketplace.visualstudio.com/manage/publishers/${state.publisherName || config.publisher}`}
+          href={
+            state.publishedUrl ||
+            `https://marketplace.visualstudio.com/manage/publishers/${state.publisherName || config.publisher}`
+          }
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors"
@@ -755,18 +788,20 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
                   disabled={loading !== null}
                 >
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isPast
-                      ? "bg-green-500/20 text-green-400"
-                      : isActive
-                        ? "bg-violet-500/20 text-violet-400 ring-2 ring-violet-500/50"
-                        : "bg-muted text-muted-foreground"
-                      }`}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                      isPast
+                        ? "bg-green-500/20 text-green-400"
+                        : isActive
+                          ? "bg-violet-500/20 text-violet-400 ring-2 ring-violet-500/50"
+                          : "bg-muted text-muted-foreground"
+                    }`}
                   >
                     {isPast ? <CheckCircle2 className="h-5 w-5" /> : <StepIcon className="h-5 w-5" />}
                   </div>
                   <span
-                    className={`text-xs font-medium ${isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
-                      }`}
+                    className={`text-xs font-medium ${
+                      isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
+                    }`}
                   >
                     {step.label}
                   </span>

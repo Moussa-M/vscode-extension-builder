@@ -6,14 +6,14 @@ import {
   Copy,
   Download,
   Check,
-  FileJson,
-  FileCode,
   File,
   Folder,
   ChevronRight,
   Sparkles,
   Rocket,
   Pencil,
+  FileJson,
+  FileCode,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -39,14 +39,7 @@ interface CodePreviewProps {
   onCodeChange?: (files: Record<string, string>) => void
   streamingFile?: string | null
   streamingContent?: string
-}
-
-const fileIcons: Record<string, React.ReactNode> = {
-  json: <FileJson className="w-4 h-4 text-yellow-500" />,
-  ts: <FileCode className="w-4 h-4 text-blue-500" />,
-  js: <FileCode className="w-4 h-4 text-yellow-400" />,
-  md: <File className="w-4 h-4 text-gray-400" />,
-  css: <File className="w-4 h-4 text-pink-400" />,
+  logoDataUrl?: string // Added logoDataUrl prop
 }
 
 function highlightCode(code: string, language: string): React.ReactNode[] {
@@ -177,6 +170,7 @@ export function CodePreview({
   onCodeChange,
   streamingFile,
   streamingContent,
+  logoDataUrl, // Added logoDataUrl
 }: CodePreviewProps) {
   const [activeFile, setActiveFile] = useState("package.json")
   const [copied, setCopied] = useState(false)
@@ -251,9 +245,16 @@ export function CodePreview({
   const handleDownloadZip = async () => {
     const JSZip = (await import("jszip")).default
     const zip = new JSZip()
-    Object.entries(files).forEach(([path, content]) => {
-      zip.file(path, content)
-    })
+
+    for (const [path, content] of Object.entries(files)) {
+      if (path.endsWith(".png") && content.startsWith("data:image/png;base64,")) {
+        const base64Data = content.replace("data:image/png;base64,", "")
+        zip.file(path, base64Data, { base64: true })
+      } else {
+        zip.file(path, content)
+      }
+    }
+
     const blob = await zip.generateAsync({ type: "blob" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -327,6 +328,15 @@ export function CodePreview({
       setActiveFile(streamingFile)
     }
   }, [streamingFile])
+
+  const fileIcons: Record<string, React.ReactNode> = {
+    json: <FileJson className="w-4 h-4 text-yellow-500" />,
+    ts: <FileCode className="w-4 h-4 text-blue-500" />,
+    js: <FileCode className="w-4 h-4 text-yellow-400" />,
+    md: <File className="w-4 h-4 text-gray-400" />,
+    css: <File className="w-4 h-4 text-pink-400" />,
+    png: <File className="w-4 h-4 text-green-400" />,
+  }
 
   return (
     <Card className="h-[calc(100vh-12rem)] flex flex-col overflow-hidden">
@@ -493,7 +503,13 @@ export function CodePreview({
           </div>
         </div>
       )}
-      <PublishModal open={publishModalOpen} onOpenChange={setPublishModalOpen} config={config} files={files} />
+      <PublishModal
+        open={publishModalOpen}
+        onOpenChange={setPublishModalOpen}
+        config={config}
+        files={files}
+        logoDataUrl={logoDataUrl}
+      />
     </Card>
   )
 }
