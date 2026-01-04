@@ -904,8 +904,23 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
     </div>
   )
 
-  const renderDoneStep = () => (
-    <div className="space-y-4 text-center py-6">
+  const renderDoneStep = () => {
+    const publisher = state.publisherName || config.publisher || "publisher"
+    const name = config.name || "extension"
+    const extensionSlug = `${publisher}.${name}`
+
+    const installLinks = [
+      { label: "VS Code", url: `vscode:extension/${extensionSlug}`, color: "text-blue-400" },
+      { label: "VS Code Insiders", url: `vscode-insiders:extension/${extensionSlug}`, color: "text-indigo-400" },
+      { label: "Cursor", url: `cursor:extension/${extensionSlug}`, color: "text-cyan-400" },
+      { label: "Windsurf", url: `windsurf:extension/${extensionSlug}`, color: "text-emerald-400" },
+      { label: "Antigravity", url: `antigravity:extension/${extensionSlug}`, color: "text-amber-400" },
+      { label: "Marketplace (web)", url: `https://marketplace.visualstudio.com/items?itemName=${extensionSlug}`, color: "text-blue-400" },
+      { label: "Open VSX (web)", url: `https://open-vsx.org/extension/${publisher}/${name}`, color: "text-green-400" },
+    ]
+
+    return (
+      <div className="space-y-4 text-center py-6">
       <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto animate-in zoom-in-50 duration-300">
         <CheckCircle2 className="h-8 w-8 text-green-400" />
       </div>
@@ -966,11 +981,29 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         )}
       </div>
 
-      <Button variant="outline" onClick={() => onOpenChange(false)} className="mt-4">
-        Done
-      </Button>
-    </div>
-  )
+        <Button variant="outline" onClick={() => onOpenChange(false)} className="mt-4">
+          Done
+        </Button>
+        <div className="mt-4 space-y-2 text-left mx-auto max-w-md text-xs text-muted-foreground">
+          <p className="font-semibold text-foreground text-center">Quick install links</p>
+          <div className="space-y-1">
+            {installLinks.map((link) => (
+              <a
+                key={link.label}
+                className={`flex items-center gap-2 justify-center ${link.color} hover:text-foreground transition-colors`}
+                href={link.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span className="truncate text-center">{link.label}: {link.url}</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

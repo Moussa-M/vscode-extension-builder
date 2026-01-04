@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     const version = (pkg.version as string) || "0.0.1";
     const displayName = (pkg.displayName as string) || extensionName;
-    const description = (pkg.description as string) || "";
+    const description = ((pkg.description as string) || "").replace(/\\n/g, "\n").trim();
     const categories = (pkg.categories as string[]) || ["Other"];
 
     // Create temp directory and write files

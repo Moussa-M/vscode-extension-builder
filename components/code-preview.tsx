@@ -14,6 +14,7 @@ import {
   Pencil,
   FileJson,
   FileCode,
+  FileText,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -277,7 +278,7 @@ export function CodePreview({
 
   const getFileExtension = (filename: string) => {
     const ext = filename.split(".").pop() || ""
-    return ext
+    return ext.toLowerCase()
   }
 
   const toggleFolder = (folder: string) => {
@@ -344,10 +345,17 @@ export function CodePreview({
     json: <FileJson className="w-4 h-4 text-yellow-500" />,
     ts: <FileCode className="w-4 h-4 text-blue-500" />,
     js: <FileCode className="w-4 h-4 text-yellow-400" />,
-    md: <File className="w-4 h-4 text-gray-400" />,
+    md: <FileText className="w-4 h-4 text-gray-400" />,
+    txt: <FileText className="w-4 h-4 text-gray-400" />,
+    license: <FileText className="w-4 h-4 text-emerald-400" />,
+    gitignore: <File className="w-4 h-4 text-amber-400" />,
+    vscodeignore: <File className="w-4 h-4 text-amber-400" />,
+    env: <File className="w-4 h-4 text-amber-400" />,
     css: <File className="w-4 h-4 text-pink-400" />,
     png: <File className="w-4 h-4 text-green-400" />,
   }
+
+  const activeFileIcon = fileIcons[getFileExtension(activeFile)] || <File className="w-4 h-4 text-muted-foreground" />
 
   return (
     <Card className="h-[calc(100vh-12rem)] flex flex-col overflow-hidden">
@@ -479,7 +487,10 @@ export function CodePreview({
           <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
             <div className="px-4 py-2 border-b border-border/50 bg-[#161b22] flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-muted-foreground">{activeFile}</span>
+                <span className="flex items-center gap-1 text-xs font-mono text-muted-foreground">
+                  {activeFileIcon}
+                  {activeFile}
+                </span>
                 {isEditing && (
                   <span className="text-xs text-yellow-500 flex items-center gap-1">
                     <Pencil className="w-3 h-3" /> Editing

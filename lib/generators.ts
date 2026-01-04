@@ -1,5 +1,15 @@
 import type { ExtensionConfig, Template } from "./types";
 
+const normalizeSingleLine = (text?: string): string => {
+  if (!text) return "";
+  return text.replace(/\\n/g, "\n").split(/\r?\n/).join(" ").trim();
+};
+
+const normalizeMultiline = (text?: string): string => {
+  if (!text) return "";
+  return text.replace(/\\n/g, "\n").replace(/\r?\n/g, "\n").trim();
+};
+
 export function generatePackageJson(
   config: ExtensionConfig,
   template: Template | null
@@ -7,7 +17,7 @@ export function generatePackageJson(
   const pkg = {
     name: config.name || "my-extension",
     displayName: config.displayName || "My Extension",
-    description: config.description || "A VS Code extension",
+    description: normalizeSingleLine(config.description) || "A VS Code extension",
     version: config.version || "0.0.1",
     publisher: config.publisher || "publisher",
     license: "MIT",
@@ -96,7 +106,7 @@ export function generateVsCodeLaunch(): string {
 
 export function generateReadme(config: ExtensionConfig): string {
   const name = config.displayName || config.name || "My Extension";
-  const description = config.description || "A VS Code extension.";
+  const description = normalizeMultiline(config.description) || "A VS Code extension.";
   const version = config.version || "0.0.1";
   const extName = config.name || "my-extension";
 
