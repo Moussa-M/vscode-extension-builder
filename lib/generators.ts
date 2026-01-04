@@ -1,12 +1,16 @@
-import type { ExtensionConfig, Template } from "./types"
+import type { ExtensionConfig, Template } from "./types";
 
-export function generatePackageJson(config: ExtensionConfig, template: Template | null): string {
+export function generatePackageJson(
+  config: ExtensionConfig,
+  template: Template | null
+): string {
   const pkg = {
     name: config.name || "my-extension",
     displayName: config.displayName || "My Extension",
     description: config.description || "A VS Code extension",
     version: config.version || "0.0.1",
     publisher: config.publisher || "publisher",
+    license: "MIT",
     engines: {
       vscode: "^1.85.0",
     },
@@ -27,14 +31,17 @@ export function generatePackageJson(config: ExtensionConfig, template: Template 
       typescript: "^5.3.0",
       "@vscode/vsce": "^2.22.0",
     },
-  }
+  };
 
-  return JSON.stringify(pkg, null, 2)
+  return JSON.stringify(pkg, null, 2);
 }
 
-export function generateExtensionTs(config: ExtensionConfig, template: Template | null): string {
-  const extName = config.name || "myExtension"
-  const displayName = config.displayName || extName
+export function generateExtensionTs(
+  config: ExtensionConfig,
+  template: Template | null
+): string {
+  const extName = config.name || "myExtension";
+  const displayName = config.displayName || extName;
   return `import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -48,7 +55,7 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
-`
+`;
 }
 
 export function generateTsConfig(): string {
@@ -66,8 +73,8 @@ export function generateTsConfig(): string {
       forceConsistentCasingInFileNames: true,
     },
     exclude: ["node_modules", ".vscode-test"],
-  }
-  return JSON.stringify(config, null, 2)
+  };
+  return JSON.stringify(config, null, 2);
 }
 
 export function generateVsCodeLaunch(): string {
@@ -83,15 +90,15 @@ export function generateVsCodeLaunch(): string {
         preLaunchTask: "npm: watch",
       },
     ],
-  }
-  return JSON.stringify(config, null, 2)
+  };
+  return JSON.stringify(config, null, 2);
 }
 
 export function generateReadme(config: ExtensionConfig): string {
-  const name = config.displayName || config.name || "My Extension"
-  const description = config.description || "A VS Code extension."
-  const version = config.version || "0.0.1"
-  const extName = config.name || "my-extension"
+  const name = config.displayName || config.name || "My Extension";
+  const description = config.description || "A VS Code extension.";
+  const version = config.version || "0.0.1";
+  const extName = config.name || "my-extension";
 
   return `# ${name}
 
@@ -120,12 +127,12 @@ None yet.
 ### ${version}
 
 Initial release.
-`
+`;
 }
 
 export function generateChangeLog(config: ExtensionConfig): string {
-  const name = config.displayName || config.name || "My Extension"
-  const version = config.version || "0.0.1"
+  const name = config.displayName || config.name || "My Extension";
+  const version = config.version || "0.0.1";
 
   return `# Change Log
 
@@ -134,7 +141,7 @@ All notable changes to the "${name}" extension will be documented in this file.
 ## [${version}]
 
 - Initial release
-`
+`;
 }
 
 export function generateGitIgnore(): string {
@@ -143,7 +150,7 @@ node_modules/
 .vscode-test/
 *.vsix
 .DS_Store
-`
+`;
 }
 
 export function generateVsCodeIgnore(): string {
@@ -157,5 +164,33 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 node_modules/**
+`;
+}
+
+export function generateLicense(config: ExtensionConfig): string {
+  const year = new Date().getFullYear()
+  const holder = config.publisher || "Publisher Name"
+  
+  return `MIT License
+
+Copyright (c) ${year} ${holder}
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 `
 }

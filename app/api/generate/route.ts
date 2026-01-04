@@ -1,15 +1,16 @@
-import { streamText } from "ai"
-import type { ExtensionConfig, Template } from "@/lib/types"
-import { makefile } from "@/lib/templates"
+import { streamText } from "ai";
+import type { ExtensionConfig, Template } from "@/lib/types";
+import { makefile } from "@/lib/templates";
 
 export async function POST(req: Request) {
-  const { prompt, config, template, mode, existingFiles } = (await req.json()) as {
-    prompt: string
-    config: ExtensionConfig
-    template: Template | null
-    mode: "add-feature" | "generate-scratch" | "modify"
-    existingFiles?: Record<string, string>
-  }
+  const { prompt, config, template, mode, existingFiles } =
+    (await req.json()) as {
+      prompt: string;
+      config: ExtensionConfig;
+      template: Template | null;
+      mode: "add-feature" | "generate-scratch" | "modify";
+      existingFiles?: Record<string, string>;
+    };
 
   const systemPrompt = `You are a world-class VS Code extension developer with expertise in TypeScript, the VS Code Extension API, and software architecture. You create production-ready, well-documented, and thoroughly tested VS Code extensions.
 
@@ -45,13 +46,14 @@ IMPORTANT: If the user hasn't provided a specific extension name, you MUST infer
 - Write a compelling description that explains the extension's value proposition
 
 You MUST generate ALL of these files:
-- package.json (complete with all metadata, commands, activation events, contributes)
+- package.json (complete with all metadata, commands, activation events, contributes, AND "license": "MIT")
 - src/extension.ts (main entry point with activate/deactivate)
 - src/*.ts (feature-specific modules, services, utilities as needed)
 - tsconfig.json (proper TypeScript configuration)
 - .vscodeignore (files to exclude from package)
 - README.md (comprehensive documentation with features, installation, usage)
 - CHANGELOG.md (initial changelog with version 0.0.1)
+- LICENSE (MIT license text - REQUIRED for OpenVSX registry)
 - .gitignore (standard ignores for Node.js/TypeScript)
 - .vscode/launch.json (debugging configuration for extension development)
 - .vscode/tasks.json (build tasks for npm scripts)
@@ -108,6 +110,7 @@ Example: ${config.name || "myext"}.helloWorld, ${config.name || "myext"}.runTask
 === PACKAGE.JSON STRUCTURE ===
 Ensure package.json includes:
 - name, displayName, description, version, publisher
+- license: "MIT" (REQUIRED for OpenVSX registry - do NOT omit this)
 - engines: { "vscode": "^1.85.0" }
 - categories, keywords (for marketplace discoverability)
 - main: "./out/extension.js"
@@ -115,6 +118,11 @@ Ensure package.json includes:
 - contributes: commands, configuration, menus, keybindings as needed
 - scripts: compile, watch, package, lint
 - devDependencies: @types/vscode, @types/node, typescript, @vscode/vsce
+
+IMPORTANT: OpenVSX registry REQUIRES:
+1. "license" field in package.json (typically "MIT")
+2. LICENSE file with full license text
+Extensions without these will be REJECTED by OpenVSX.
 
 === CRITICAL: OUTPUT FORMAT ===
 Your response MUST be a valid JSON object that can be parsed with JSON.parse().
@@ -146,7 +154,7 @@ REQUIRED JSON STRUCTURE:
 EXAMPLE of properly escaped file content:
 "src/extension.ts": "import * as vscode from 'vscode';\\n\\n/**\\n * Activates the extension\\n */\\nexport function activate(context: vscode.ExtensionContext) {\\n\\tconst disposable = vscode.commands.registerCommand('myext.hello', () => {\\n\\t\\tvscode.window.showInformationMessage('Hello!');\\n\\t});\\n\\tcontext.subscriptions.push(disposable);\\n}"
 
-Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse() would succeed on your output.`
+Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse() would succeed on your output.`;
 
   try {
     const result = streamText({
@@ -157,11 +165,11 @@ Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse(
       ],
       maxTokens: 16000,
       temperature: 0.7,
-    })
+    });
 
-    return result.toTextStreamResponse()
+    return result.toTextStreamResponse();
   } catch (error) {
-    console.error("AI generation error:", error)
+    console.error("AI generation error:", error);
     return Response.json(
       {
         message: "Failed to generate code. Please try again.",
@@ -169,7 +177,7 @@ Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse(
         commands: [],
         activationEvents: [],
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

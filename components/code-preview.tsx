@@ -28,6 +28,7 @@ import {
   generateChangeLog,
   generateGitIgnore,
   generateVsCodeIgnore,
+  generateLicense,
 } from "@/lib/generators"
 import { motion, AnimatePresence } from "framer-motion"
 import { PublishModal } from "./publish-modal"
@@ -197,6 +198,7 @@ export function CodePreview({
     const changelog = generateChangeLog(config)
     const gitignore = generateGitIgnore()
     const vscodeIgnore = generateVsCodeIgnore()
+    const license = generateLicense(config)
 
     const baseFiles: Record<string, string> = {
       "package.json": packageJson,
@@ -204,6 +206,7 @@ export function CodePreview({
       ".vscode/launch.json": vscodeLaunch,
       "README.md": readme,
       "CHANGELOG.md": changelog,
+      "LICENSE": license,
       ".gitignore": gitignore,
       ".vscodeignore": vscodeIgnore,
     }
@@ -439,13 +442,12 @@ export function CodePreview({
                                   if (isEditing) handleCancelEdit()
                                   setActiveFile(filename)
                                 }}
-                                className={`flex items-center gap-1.5 w-full px-2 py-1 text-xs rounded transition-colors ${
-                                  activeFile === filename
+                                className={`flex items-center gap-1.5 w-full px-2 py-1 text-xs rounded transition-colors ${activeFile === filename
                                     ? "bg-primary text-primary-foreground"
                                     : isCurrentlyStreaming
                                       ? "bg-yellow-500/20 text-yellow-300 animate-pulse"
                                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                                }`}
+                                  }`}
                               >
                                 {fileIcons[getFileExtension(filename)] || <File className="w-3.5 h-3.5" />}
                                 <span className="truncate">{filename.split("/").pop()}</span>
