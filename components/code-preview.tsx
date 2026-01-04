@@ -297,7 +297,8 @@ export function CodePreview({
 
   const fileTree = useMemo(() => {
     const tree: Record<string, string[]> = { root: [] }
-    const allFiles = { ...files, ...streamingFiles } // Merge streaming files with regular files
+    const safeStreamingFiles = streamingFiles || {} // Ensure streamingFiles is always an object
+    const allFiles = { ...files, ...safeStreamingFiles } // Merge streaming files with regular files
     if (streamingFile && !allFiles[streamingFile]) {
       allFiles[streamingFile] = streamingContent || ""
     }
@@ -318,9 +319,10 @@ export function CodePreview({
 
   const displayContent = useMemo(() => {
     if (isEditing) return editedContent
-    if (streamingFiles[activeFile]) {
+    const safeStreamingFiles = streamingFiles || {} // Ensure streamingFiles is always an object
+    if (safeStreamingFiles[activeFile]) {
       // Check streaming files first
-      return streamingFiles[activeFile]
+      return safeStreamingFiles[activeFile]
     }
     if (streamingFile === activeFile && streamingContent !== undefined) {
       return streamingContent
