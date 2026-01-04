@@ -771,7 +771,7 @@ export function AiAssistant({
                       </div>
                     ) : msg.role === "user" ? (
                       <p className="text-sm text-foreground/70 truncate max-w-full">
-                        {msg.content.length > 60 ? `${msg.content.slice(0, 60)}...` : msg.content}
+                        {prompt.length > 60 ? `${prompt.slice(0, 60)}...` : prompt}
                       </p>
                     ) : (
                       <>
@@ -790,7 +790,11 @@ export function AiAssistant({
                             </div>
                           </div>
                         ) : (
-                          <p className="text-sm text-foreground">{msg.content}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {msg.content.includes("couldn't parse") || msg.content.includes("error")
+                              ? msg.content
+                              : "Processing complete"}
+                          </p>
                         )}
                       </>
                     )}
