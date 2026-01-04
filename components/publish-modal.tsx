@@ -276,7 +276,6 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         publishedUrl:
           data.manualUploadUrl || `https://marketplace.visualstudio.com/manage/publishers/${state.publisherName}`,
       }))
-      setCurrentStep("done")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create extension package")
     } finally {
@@ -330,11 +329,6 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         ...prev,
         openVsxPublishedUrl: data.url || `https://open-vsx.org/extension/${state.publisherName}/${config.name}`,
       }))
-
-      // If we haven't already gone to done step, go there now
-      if (currentStep !== "done") {
-        setCurrentStep("done")
-      }
     } catch (err) {
       console.error("[OpenVSX] Error publishing:", err)
       setError(err instanceof Error ? err.message : "Failed to publish to Open VSX")
@@ -751,6 +745,20 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
             Add Azure PAT in Setup to enable auto-publish
           </div>
         )}
+
+        {state.publishedUrl && (
+          <div className="text-xs text-green-400 flex items-center gap-2 mt-2">
+            <CheckCircle2 className="h-3 w-3" />
+            <a
+              className="underline"
+              href={state.publishedUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Published to VS Marketplace
+            </a>
+          </div>
+        )}
       </div>
 
       <div className="p-4 rounded-lg bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20 space-y-3">
@@ -788,6 +796,20 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
           <div className="text-xs text-amber-400 flex items-center gap-2">
             <AlertCircle className="h-3 w-3" />
             Add Open VSX token in Setup to enable auto-publish
+          </div>
+        )}
+
+        {state.openVsxPublishedUrl && (
+          <div className="text-xs text-green-400 flex items-center gap-2 mt-2">
+            <CheckCircle2 className="h-3 w-3" />
+            <a
+              className="underline"
+              href={state.openVsxPublishedUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Published to Open VSX
+            </a>
           </div>
         )}
       </div>

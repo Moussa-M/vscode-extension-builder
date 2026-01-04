@@ -502,7 +502,7 @@ export function CodePreview({
                 spellCheck={false}
               />
             ) : (
-              <div className="flex-1 overflow-auto" ref={codeContainerRef}>
+                        <div className="flex-1 overflow-auto" ref={codeContainerRef}>
                 <pre className="p-4 text-[13px] font-mono leading-6 min-w-max">
                   <code>
                     {highlightedCode}

@@ -176,11 +176,12 @@ export async function POST(req: NextRequest) {
           stderr?: string
           message?: string
         }
-        const errorMsg = error.stderr || error.message || ""
+
+        const errorMsg = [error.stderr, error.stdout, error.message].filter(Boolean).join("\n")
         console.error("[apertacodex] Publish failed:", errorMsg)
 
-        // Check if it's a version conflict error
-        const isVersionConflict = errorMsg.includes("already exists")
+        // Check if it's a version conflict error (vsce outputs: "<publisher>.<name> vX.Y.Z already exists")
+        const isVersionConflict = errorMsg.includes("already exists") || errorMsg.includes("exists already")
 
         let suggestion = "Download the VSIX and publish manually or check your Azure PAT permissions."
         let errorMessage = `Auto-publish failed: ${errorMsg}`

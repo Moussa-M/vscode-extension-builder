@@ -9,7 +9,13 @@ import { AiAssistant } from "./ai-assistant"
 import Avatar from "boring-avatars"
 import type { ExtensionConfig, Template } from "@/lib/types"
 import { templates } from "@/lib/templates"
-import { getStoredCredentials } from "@/lib/storage"
+import {
+  getStoredCredentials,
+  getStoredTemplateConfig,
+  getStoredTemplateIcon,
+  saveTemplateConfig,
+  saveTemplateIcon,
+} from "@/lib/storage"
 import { colorPalettes } from "./logo-generator"
 
 export function ExtensionBuilder() {
@@ -117,33 +123,60 @@ export function ExtensionBuilder() {
   const handleTemplateSelect = (template: Template) => {
     setSelectedTemplate(template)
     const stored = getStoredCredentials()
+    const storedTemplateConfig = getStoredTemplateConfig(template.id)
+    const storedTemplateIcon = getStoredTemplateIcon(template.id)
 
     if (template.id === "scratch") {
       setConfig({
-        name: "",
-        displayName: "",
-        description: "",
-        publisher: stored.publisherName || "",
-        version: "0.0.1",
-        category: "Other",
-        activationEvents: [],
-        contributes: {},
+        name: storedTemplateConfig?.name || "",
+        displayName: storedTemplateConfig?.displayName || "",
+        description: storedTemplateConfig?.description || "",
+        publisher: storedTemplateConfig?.publisher || stored.publisherName || "",
+        version: storedTemplateConfig?.version || "0.0.1",
+        category: storedTemplateConfig?.category || "Other",
+        activationEvents: storedTemplateConfig?.activationEvents || [],
+        contributes: storedTemplateConfig?.contributes || {},
       })
-      setGeneratedCode({})
-      setLogoDataUrl(undefined)
+      setGeneratedCode(() => {
+        const base: Record<string, string> = {}
+        if (storedTemplateIcon) {
+          base["images/icon.png"] = storedTemplateIcon
+        }
+        return base
+      })
+      setLogoDataUrl(storedTemplateIcon || undefined)
       setActiveTab("ai")
     } else {
-      const newConfig = {
-        ...config,
-        ...template.defaultConfig,
+      const baseConfig: ExtensionConfig = {
         name: template.suggestedConfig.name,
         displayName: template.suggestedConfig.displayName,
         description: template.suggestedConfig.description,
         publisher: stored.publisherName || template.suggestedConfig.publisher,
+        version: "0.0.1",
         category: template.suggestedConfig.category,
+        activationEvents: template.defaultConfig?.activationEvents || [],
+        contributes: template.defaultConfig?.contributes || {},
+      }
+      const newConfig: ExtensionConfig = {
+        ...baseConfig,
+        ...(storedTemplateConfig || {}),
       }
       setConfig(newConfig)
-      setGeneratedCode(template.boilerplate)
+      setGeneratedCode((prev) => {
+        const base = { ...template.boilerplate }
+        if (storedTemplateIcon) {
+          base["images/icon.png"] = storedTemplateIcon
+          if (base["package.json"]) {
+            try {
+              const pkg = JSON.parse(base["package.json"])
+              pkg.icon = "images/icon.png"
+              base["package.json"] = JSON.stringify(pkg, null, 2)
+            } catch {}
+          }
+        }
+        return base
+      })
+      setLogoDataUrl(storedTemplateIcon || undefined)
       setActiveTab("config")
 
       generateLogo(template, template.suggestedConfig.name)
@@ -179,6 +212,14 @@ export function ExtensionBuilder() {
   const handleCodeChange = useCallback((files: Record<string, string>) => {
     setGeneratedCode(files)
 
+    if (selectedTemplate) {
+      if (files["images/icon.png"]) {
+        saveTemplateIcon(selectedTemplate.id, files["images/icon.png"])
+      } else {
+        saveTemplateIcon(selectedTemplate.id, null)
+      }
+    }
+
     // If package.json was edited, sync config
     if (files["package.json"]) {
       try {
@@ -196,7 +237,7 @@ export function ExtensionBuilder() {
         // Invalid JSON, ignore
       }
     }
-  }, [])
+  }, [selectedTemplate])
 
   const handleStreamingUpdate = useCallback((file: string | null, content: string) => {
     setStreamingFile(file)
@@ -217,7 +258,10 @@ export function ExtensionBuilder() {
       }
       return newCode
     })
-  }, [])
+    if (selectedTemplate) {
+      saveTemplateIcon(selectedTemplate.id, dataUrl)
+    }
+  }, [selectedTemplate])
 
   useEffect(() => {
     if (Object.keys(generatedCode).length === 0) return
@@ -265,6 +309,11 @@ export function ExtensionBuilder() {
       }
     })
   }, [config.name, config.displayName, config.description, config.publisher, config.version, config.category])
+
+  useEffect(() => {
+    if (!selectedTemplate) return
+    saveTemplateConfig(selectedTemplate.id, config)
+  }, [selectedTemplate, config])
 
   return (
     <div className="min-h-screen bg-background">
