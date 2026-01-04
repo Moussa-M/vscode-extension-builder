@@ -201,8 +201,8 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
   )
 
   const publishToMarketplace = useCallback(async () => {
-    if (!state.azureToken || !state.publisherName) {
-      setError("Azure PAT and Publisher name are required")
+    if (!state.publisherName) {
+      setError("Publisher name is required")
       return
     }
 
@@ -216,7 +216,7 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          azureToken: state.azureToken,
+          azureToken: state.azureToken || "",
           publisher: state.publisherName,
           extensionName: config.name || "my-extension",
           files,
@@ -232,13 +232,20 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
         if (data.vsixBase64) {
           setFallbackVsix(data.vsixBase64)
         }
-        throw new Error(data.error || "Failed to publish extension")
+        throw new Error(data.error || "Failed to create extension package")
       }
 
-      setState((prev) => ({ ...prev, publishedUrl: data.url }))
+      // API now returns VSIX for manual upload
+      if (data.vsixBase64) {
+        setFallbackVsix(data.vsixBase64)
+        setErrorSuggestion(data.suggestion || "Download the VSIX and upload it manually to the VS Marketplace")
+      }
+
+      // Set a URL for the marketplace manage page
+      setState((prev) => ({ ...prev, publishedUrl: data.manualUploadUrl || `https://marketplace.visualstudio.com/manage/publishers/${state.publisherName}` }))
       setCurrentStep("done")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to publish extension")
+      setError(err instanceof Error ? err.message : "Failed to create extension package")
     } finally {
       setLoading(null)
     }
@@ -669,16 +676,27 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
         <CheckCircle2 className="h-8 w-8 text-green-400" />
       </div>
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-150">
-        <h3 className="font-semibold text-lg">Extension Published!</h3>
-        <p className="text-sm text-muted-foreground mt-1">Your extension is now live on the VS Code Marketplace</p>
+        <h3 className="font-semibold text-lg">Extension Package Ready!</h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          {fallbackVsix ? "Download your .vsix file and upload it to the VS Marketplace" : "Your extension is ready for publishing"}
+        </p>
       </div>
+
+      {fallbackVsix && (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-200">
+          <Button
+            onClick={downloadFallbackVsix}
+            className="bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download .vsix Package
+          </Button>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-2 justify-center pt-4 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-300">
         <a
-          href={
-            state.publishedUrl ||
-            `https://marketplace.visualstudio.com/items?itemName=${state.publisherName || config.publisher}.${config.name || "extension"}`
-          }
+          href={state.publishedUrl || `https://marketplace.visualstudio.com/manage/publishers/${state.publisherName || config.publisher}`}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors"
@@ -737,20 +755,18 @@ export function PublishModal({ open, onOpenChange, config, files }: PublishModal
                   disabled={loading !== null}
                 >
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-                      isPast
-                        ? "bg-green-500/20 text-green-400"
-                        : isActive
-                          ? "bg-violet-500/20 text-violet-400 ring-2 ring-violet-500/50"
-                          : "bg-muted text-muted-foreground"
-                    }`}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isPast
+                      ? "bg-green-500/20 text-green-400"
+                      : isActive
+                        ? "bg-violet-500/20 text-violet-400 ring-2 ring-violet-500/50"
+                        : "bg-muted text-muted-foreground"
+                      }`}
                   >
                     {isPast ? <CheckCircle2 className="h-5 w-5" /> : <StepIcon className="h-5 w-5" />}
                   </div>
                   <span
-                    className={`text-xs font-medium ${
-                      isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
-                    }`}
+                    className={`text-xs font-medium ${isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
+                      }`}
                   >
                     {step.label}
                   </span>
