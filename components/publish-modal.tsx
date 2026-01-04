@@ -298,7 +298,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
           if (pkg.icon) {
             iconPath = pkg.icon
           }
-        } catch {}
+        } catch { }
       }
 
       for (const [path, content] of Object.entries(filesWithLogo)) {
@@ -737,7 +737,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         <h3 className="font-semibold text-lg">Extension Package Ready!</h3>
         <p className="text-sm text-muted-foreground mt-1">
           {fallbackVsix
-            ? "Download your .vsix file and upload it to the VS Marketplace"
+            ? "Your extension is published in the VS Marketplace"
             : "Your extension is ready for publishing"}
         </p>
       </div>
@@ -818,20 +818,18 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
                   disabled={loading !== null}
                 >
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-                      isPast
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isPast
                         ? "bg-green-500/20 text-green-400"
                         : isActive
                           ? "bg-violet-500/20 text-violet-400 ring-2 ring-violet-500/50"
                           : "bg-muted text-muted-foreground"
-                    }`}
+                      }`}
                   >
                     {isPast ? <CheckCircle2 className="h-5 w-5" /> : <StepIcon className="h-5 w-5" />}
                   </div>
                   <span
-                    className={`text-xs font-medium ${
-                      isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
-                    }`}
+                    className={`text-xs font-medium ${isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
+                      }`}
                   >
                     {step.label}
                   </span>
