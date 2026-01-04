@@ -287,10 +287,28 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       const ext = zip.folder("extension")
       if (!ext) throw new Error("Failed to create zip")
 
+      let hasIcon = false
+      let iconPath = ""
+
+      // Check for icon in package.json
+      const pkgJson = filesWithLogo["package.json"]
+      if (pkgJson) {
+        try {
+          const pkg = JSON.parse(pkgJson)
+          if (pkg.icon) {
+            iconPath = pkg.icon
+          }
+        } catch {}
+      }
+
       for (const [path, content] of Object.entries(filesWithLogo)) {
         if (path.endsWith(".png") && content.startsWith("data:")) {
           const base64 = content.split(",")[1]
           ext.file(path, base64, { base64: true })
+          if (path === iconPath || path.includes("icon")) {
+            hasIcon = true
+            iconPath = path
+          }
         } else {
           ext.file(path, content)
         }
@@ -305,19 +323,28 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
   <Default Extension=".ts" ContentType="text/plain"/>
   <Default Extension=".js" ContentType="application/javascript"/>
   <Default Extension=".md" ContentType="text/markdown"/>
+  <Default Extension=".txt" ContentType="text/plain"/>
+  <Default Extension=".png" ContentType="image/png"/>
+  <Default Extension=".vsixmanifest" ContentType="text/xml"/>
 </Types>`,
       )
 
-      // Add extension.vsixmanifest
-      const pkg = JSON.parse(filesWithLogo["package.json"] || "{}")
+      // Add extension.vsixmanifest with icon support
       const manifest = `<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
   <Metadata>
     <Identity Language="en-US" Id="${config.name}" Version="${config.version || "0.0.1"}" Publisher="${state.publisherName || config.publisher}"/>
-    <DisplayName>${config.displayName}</DisplayName>
-    <Description>${config.description}</Description>
-    <Categories>Other</Categories>
+    <DisplayName>${config.displayName || config.name}</DisplayName>
+    <Description>${config.description || ""}</Description>
+    <Categories>${config.category || "Other"}</Categories>
     <GalleryFlags>Public</GalleryFlags>
+    ${hasIcon ? `<Icon>extension/${iconPath}</Icon>` : ""}
+    <Properties>
+      <Property Id="Microsoft.VisualStudio.Code.Engine" Value="^1.60.0"/>
+      <Property Id="Microsoft.VisualStudio.Code.ExtensionDependencies" Value=""/>
+      <Property Id="Microsoft.VisualStudio.Code.ExtensionPack" Value=""/>
+      <Property Id="Microsoft.VisualStudio.Code.ExtensionKind" Value="workspace"/>
+    </Properties>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Code"/>
@@ -325,6 +352,9 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
   <Dependencies/>
   <Assets>
     <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/>
+    ${filesWithLogo["README.md"] ? '<Asset Type="Microsoft.VisualStudio.Services.Content.Details" Path="extension/README.md" Addressable="true"/>' : ""}
+    ${filesWithLogo["CHANGELOG.md"] ? '<Asset Type="Microsoft.VisualStudio.Services.Content.Changelog" Path="extension/CHANGELOG.md" Addressable="true"/>' : ""}
+    ${hasIcon ? `<Asset Type="Microsoft.VisualStudio.Services.Icons.Default" Path="extension/${iconPath}" Addressable="true"/>` : ""}
   </Assets>
 </PackageManifest>`
       zip.file("extension.vsixmanifest", manifest)

@@ -1,79 +1,83 @@
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import path from "path";
-import fs from "fs/promises";
-import os from "os";
+import type { NextRequest } from "next/server"
+import { NextResponse } from "next/server"
+import { exec } from "child_process"
+import { promisify } from "util"
+import path from "path"
+import fs from "fs/promises"
+import os from "os"
 
-const execAsync = promisify(exec);
+const execAsync = promisify(exec)
 
 export async function POST(req: NextRequest) {
-  let tempDir: string | null = null;
+  let tempDir: string | null = null
 
   try {
-    const body = await req.json();
+    const body = await req.json()
     const { azureToken, publisher, extensionName, files } = body as {
-      azureToken?: string;
-      publisher: string;
-      extensionName: string;
-      files: Record<string, string>;
-    };
+      azureToken?: string
+      publisher: string
+      extensionName: string
+      files: Record<string, string>
+    }
 
-    console.log(
-      "[apertacodex] Starting VSIX creation for:",
-      publisher,
-      extensionName
-    );
+    console.log("[apertacodex] Starting VSIX creation for:", publisher, extensionName)
 
     if (!publisher || !extensionName || !files) {
-      return NextResponse.json(
-        { error: "Missing required fields: publisher, extensionName, files" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing required fields: publisher, extensionName, files" }, { status: 400 })
     }
 
-    const packageJson = files["package.json"];
+    const packageJson = files["package.json"]
     if (!packageJson) {
-      return NextResponse.json(
-        { error: "package.json is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "package.json is required" }, { status: 400 })
     }
 
-    let pkg: Record<string, unknown>;
+    let pkg: Record<string, unknown>
     try {
-      pkg = JSON.parse(packageJson);
+      pkg = JSON.parse(packageJson)
     } catch {
-      return NextResponse.json(
-        { error: "Invalid package.json" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid package.json" }, { status: 400 })
     }
 
-    const version = (pkg.version as string) || "0.0.1";
-    const displayName = (pkg.displayName as string) || extensionName;
-    const description = (pkg.description as string) || "";
-    const categories = (pkg.categories as string[]) || ["Other"];
+    const version = (pkg.version as string) || "0.0.1"
+    const displayName = (pkg.displayName as string) || extensionName
+    const description = (pkg.description as string) || ""
+    const categories = (pkg.categories as string[]) || ["Other"]
 
     // Create temp directory and write files
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "vsce-"));
-    console.log("[apertacodex] Created temp directory:", tempDir);
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "vsce-"))
+    console.log("[apertacodex] Created temp directory:", tempDir)
 
     // Create VSIX using JSZip
-    const JSZip = (await import("jszip")).default;
-    const zip = new JSZip();
+    const JSZip = (await import("jszip")).default
+    const zip = new JSZip()
 
-    const ext = zip.folder("extension");
+    const ext = zip.folder("extension")
     if (!ext) {
-      return NextResponse.json(
-        { error: "Failed to create package structure" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Failed to create package structure" }, { status: 500 })
+    }
+
+    let hasIcon = false
+    let iconPath = ""
+
+    // Check for icon in package.json
+    if (pkg.icon && typeof pkg.icon === "string") {
+      iconPath = pkg.icon as string
     }
 
     for (const [filePath, content] of Object.entries(files)) {
-      ext.file(filePath, content);
+      if (content.startsWith("data:image/png;base64,")) {
+        const base64Data = content.replace("data:image/png;base64,", "")
+        const binaryData = Buffer.from(base64Data, "base64")
+        ext.file(filePath, binaryData, { binary: true })
+
+        // Track if this is the icon file
+        if (filePath === iconPath || filePath.includes("icon")) {
+          hasIcon = true
+          iconPath = filePath
+        }
+      } else {
+        ext.file(filePath, content)
+      }
     }
 
     // Content Types XML
@@ -88,10 +92,9 @@ export async function POST(req: NextRequest) {
   <Default Extension=".txt" ContentType="text/plain"/>
   <Default Extension=".png" ContentType="image/png"/>
   <Default Extension=".vsixmanifest" ContentType="text/xml"/>
-</Types>`
-    );
+</Types>`,
+    )
 
-    // VSIX Manifest
     const manifest = `<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
@@ -101,6 +104,7 @@ export async function POST(req: NextRequest) {
     <Tags>${categories.join(",")}</Tags>
     <Categories>${categories.join(",")}</Categories>
     <GalleryFlags>Public</GalleryFlags>
+    ${hasIcon ? `<Icon>extension/${iconPath}</Icon>` : ""}
     <Properties>
       <Property Id="Microsoft.VisualStudio.Code.Engine" Value="^1.60.0"/>
       <Property Id="Microsoft.VisualStudio.Code.ExtensionDependencies" Value=""/>
@@ -115,47 +119,32 @@ export async function POST(req: NextRequest) {
   <Dependencies/>
   <Assets>
     <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/>
-    ${
-      files["README.md"]
-        ? '<Asset Type="Microsoft.VisualStudio.Services.Content.Details" Path="extension/README.md" Addressable="true"/>'
-        : ""
-    }
-    ${
-      files["CHANGELOG.md"]
-        ? '<Asset Type="Microsoft.VisualStudio.Services.Content.Changelog" Path="extension/CHANGELOG.md" Addressable="true"/>'
-        : ""
-    }
+    ${files["README.md"] ? '<Asset Type="Microsoft.VisualStudio.Services.Content.Details" Path="extension/README.md" Addressable="true"/>' : ""}
+    ${files["CHANGELOG.md"] ? '<Asset Type="Microsoft.VisualStudio.Services.Content.Changelog" Path="extension/CHANGELOG.md" Addressable="true"/>' : ""}
+    ${hasIcon ? `<Asset Type="Microsoft.VisualStudio.Services.Icons.Default" Path="extension/${iconPath}" Addressable="true"/>` : ""}
   </Assets>
-</PackageManifest>`;
+</PackageManifest>`
 
-    zip.file("extension.vsixmanifest", manifest);
+    zip.file("extension.vsixmanifest", manifest)
 
-    const vsixFilename = `${publisher}.${extensionName}-${version}.vsix`;
-    const vsixPath = path.join(tempDir, vsixFilename);
+    const vsixFilename = `${publisher}.${extensionName}-${version}.vsix`
+    const vsixPath = path.join(tempDir, vsixFilename)
 
-    console.log("[apertacodex] Generating VSIX...");
+    console.log("[apertacodex] Generating VSIX...")
     const vsixBuffer = await zip.generateAsync({
       type: "nodebuffer",
       compression: "DEFLATE",
       compressionOptions: { level: 9 },
-    });
+    })
 
-    await fs.writeFile(vsixPath, vsixBuffer);
-    console.log(
-      "[apertacodex] VSIX saved:",
-      vsixPath,
-      "size:",
-      vsixBuffer.length,
-      "bytes"
-    );
+    await fs.writeFile(vsixPath, vsixBuffer)
+    console.log("[apertacodex] VSIX saved:", vsixPath, "size:", vsixBuffer.length, "bytes")
 
-    const vsixBase64 = vsixBuffer.toString("base64");
+    const vsixBase64 = vsixBuffer.toString("base64")
 
     // If Azure PAT provided, publish using vsce CLI
     if (azureToken) {
-      console.log(
-        "[apertacodex] Azure PAT provided, publishing via vsce CLI..."
-      );
+      console.log("[apertacodex] Azure PAT provided, publishing via vsce CLI...")
 
       try {
         // Run vsce publish as subprocess
@@ -165,44 +154,42 @@ export async function POST(req: NextRequest) {
             cwd: tempDir,
             timeout: 60000, // 60 second timeout
             env: { ...process.env, VSCE_PAT: azureToken },
-          }
-        );
+          },
+        )
 
-        console.log("[apertacodex] vsce stdout:", stdout);
-        if (stderr) console.log("[apertacodex] vsce stderr:", stderr);
+        console.log("[apertacodex] vsce stdout:", stdout)
+        if (stderr) console.log("[apertacodex] vsce stderr:", stderr)
 
-        console.log("[apertacodex] Published successfully!");
+        console.log("[apertacodex] Published successfully!")
 
         return NextResponse.json({
           success: true,
           published: true,
-          message:
-            "Extension published successfully to the VS Code Marketplace!",
+          message: "Extension published successfully to the VS Code Marketplace!",
           url: `https://marketplace.visualstudio.com/items?itemName=${publisher}.${extensionName}`,
           vsixBase64,
           vsixFilename,
-        });
+        })
       } catch (publishError: unknown) {
         const error = publishError as {
-          stdout?: string;
-          stderr?: string;
-          message?: string;
-        };
-        const errorMsg = error.stderr || error.message || "";
-        console.error("[apertacodex] Publish failed:", errorMsg);
+          stdout?: string
+          stderr?: string
+          message?: string
+        }
+        const errorMsg = error.stderr || error.message || ""
+        console.error("[apertacodex] Publish failed:", errorMsg)
 
         // Check if it's a version conflict error
-        const isVersionConflict = errorMsg.includes("already exists");
+        const isVersionConflict = errorMsg.includes("already exists")
 
-        let suggestion =
-          "Download the VSIX and publish manually or check your Azure PAT permissions.";
-        let errorMessage = `Auto-publish failed: ${errorMsg}`;
+        let suggestion = "Download the VSIX and publish manually or check your Azure PAT permissions."
+        let errorMessage = `Auto-publish failed: ${errorMsg}`
 
         if (isVersionConflict) {
           suggestion = `Version ${version} already exists in the marketplace. Please update the version number in package.json (e.g., to ${incrementVersion(
-            version
-          )}) and try again.`;
-          errorMessage = `Version ${version} already exists in the marketplace`;
+            version,
+          )}) and try again.`
+          errorMessage = `Version ${version} already exists in the marketplace`
         }
 
         // Return VSIX for manual upload as fallback
@@ -215,46 +202,43 @@ export async function POST(req: NextRequest) {
           vsixFilename,
           manualUploadUrl: `https://marketplace.visualstudio.com/manage/publishers/${publisher}`,
           cliCommand: `npx @vscode/vsce publish --packagePath ${vsixFilename} -p <your-pat>`,
-        });
+        })
       }
     }
 
     // No PAT - return VSIX for manual upload
-    console.log(
-      "[apertacodex] No PAT provided, returning VSIX for manual upload"
-    );
+    console.log("[apertacodex] No PAT provided, returning VSIX for manual upload")
     return NextResponse.json({
       success: true,
       published: false,
-      message:
-        "VSIX created! Provide an Azure PAT for auto-publishing, or download and publish manually.",
+      message: "VSIX created! Provide an Azure PAT for auto-publishing, or download and publish manually.",
       vsixBase64,
       vsixFilename,
       manualUploadUrl: `https://marketplace.visualstudio.com/manage/publishers/${publisher}`,
       cliCommand: `npx @vscode/vsce publish --packagePath ${vsixFilename} -p <your-pat>`,
-    });
+    })
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("[apertacodex] Error:", errorMessage);
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error("[apertacodex] Error:", errorMessage)
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   } finally {
     // Cleanup temp directory
     if (tempDir) {
       try {
-        await fs.rm(tempDir, { recursive: true, force: true });
-        console.log("[apertacodex] Cleaned up temp directory");
+        await fs.rm(tempDir, { recursive: true, force: true })
+        console.log("[apertacodex] Cleaned up temp directory")
       } catch {}
     }
   }
 }
 
 function incrementVersion(version: string): string {
-  const parts = version.split(".");
+  const parts = version.split(".")
   if (parts.length === 3) {
-    const patch = parseInt(parts[2], 10);
-    return `${parts[0]}.${parts[1]}.${patch + 1}`;
+    const patch = Number.parseInt(parts[2], 10)
+    return `${parts[0]}.${parts[1]}.${patch + 1}`
   }
-  return version;
+  return version
 }
 
 function escapeXml(str: string): string {
@@ -263,5 +247,5 @@ function escapeXml(str: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+    .replace(/'/g, "&apos;")
 }
