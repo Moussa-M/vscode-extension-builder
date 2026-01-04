@@ -7,18 +7,15 @@ import { ConfigPanel } from "./config-panel"
 import { CodePreview } from "./code-preview"
 import { AiAssistant } from "./ai-assistant"
 import Avatar from "boring-avatars"
-import type { ExtensionConfig, Template } from "@/lib/types"
+import type { ExtensionConfig, Template, UserExtension } from "@/lib/types"
 import { templates } from "@/lib/templates"
-import {
-  getStoredCredentials,
-  getStoredTemplateConfig,
-  getStoredTemplateIcon,
-  saveTemplateConfig,
-  saveTemplateIcon,
-} from "@/lib/storage"
+import { getStoredCredentials, saveUserExtension, getUserExtension } from "@/lib/storage"
 import { colorPalettes } from "./logo-generator"
+import { useToast } from "@/hooks/use-toast"
 
 export function ExtensionBuilder() {
+  const { toast } = useToast()
+  const [currentExtensionId, setCurrentExtensionId] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
   const [config, setConfig] = useState<ExtensionConfig>({
     name: "",
@@ -34,17 +31,50 @@ export function ExtensionBuilder() {
   const [activeTab, setActiveTab] = useState<"templates" | "config" | "ai">("templates")
   const [streamingFile, setStreamingFile] = useState<string | null>(null)
   const [streamingContent, setStreamingContent] = useState("")
+  const [streamingFiles, setStreamingFiles] = useState<Record<string, string>>({})
   const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>()
 
+  // Load publisher from stored credentials on mount
   useEffect(() => {
     const stored = getStoredCredentials()
     if (stored.publisherName) {
-      setConfig((prev) => ({
-        ...prev,
-        publisher: prev.publisher || stored.publisherName,
-      }))
+      setConfig((prev) => ({ ...prev, publisher: stored.publisherName }))
     }
   }, [])
+
+  const handleSaveExtension = useCallback(async () => {
+    if (!config.name && !config.displayName) {
+      toast({
+        title: "Cannot save",
+        description: "Please provide a name for your extension first.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const extension: UserExtension = {
+      id: currentExtensionId || `ext_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      name: config.name || config.displayName.toLowerCase().replace(/\s+/g, "-"),
+      displayName: config.displayName || config.name,
+      description: config.description,
+      tags: [config.category || "Other"],
+      boilerplate: generatedCode,
+      config,
+      logoDataUrl,
+      createdAt: currentExtensionId
+        ? (await getUserExtension(currentExtensionId))?.createdAt || Date.now()
+        : Date.now(),
+      updatedAt: Date.now(),
+    }
+
+    await saveUserExtension(extension)
+    setCurrentExtensionId(extension.id)
+
+    toast({
+      title: "Extension saved",
+      description: `"${extension.displayName}" has been saved to My Extensions.`,
+    })
+  }, [config, generatedCode, logoDataUrl, currentExtensionId, toast])
 
   const generateLogo = useCallback((template: Template, extensionName: string) => {
     if (!template || template.id === "scratch") return
@@ -55,12 +85,10 @@ export function ExtensionBuilder() {
     const seed = suggestedLogo?.seed || extensionName || "extension"
     const colors = colorPalettes[paletteIndex]?.colors || colorPalettes[0].colors
 
-    // Create hidden container
     const container = document.createElement("div")
     container.style.cssText = "position:absolute;left:-9999px;top:-9999px;"
     document.body.appendChild(container)
 
-    // Dynamically import and render
     import("react-dom/client").then(({ createRoot }) => {
       const root = createRoot(container)
       root.render(<Avatar name={seed} variant={variant} size={128} colors={colors} square />)
@@ -92,7 +120,6 @@ export function ExtensionBuilder() {
             ctx.drawImage(img, 0, 0, 128, 128)
             const dataUrl = canvas.toDataURL("image/png")
             setLogoDataUrl(dataUrl)
-            // Also add to generated files
             setGeneratedCode((prev) => {
               const newCode = { ...prev }
               newCode["images/icon.png"] = dataUrl
@@ -120,31 +147,42 @@ export function ExtensionBuilder() {
     })
   }, [])
 
-  const handleTemplateSelect = (template: Template) => {
+  const handleTemplateSelect = (
+    template: Template & { isUserExtension?: boolean; userExtensionId?: string; logoDataUrl?: string },
+  ) => {
     setSelectedTemplate(template)
     const stored = getStoredCredentials()
-    const storedTemplateConfig = getStoredTemplateConfig(template.id)
-    const storedTemplateIcon = getStoredTemplateIcon(template.id)
+
+    // Handle user extension selection
+    if (template.isUserExtension && template.userExtensionId) {
+      getUserExtension(template.userExtensionId).then((ext) => {
+        if (ext) {
+          setCurrentExtensionId(ext.id)
+          setConfig(ext.config)
+          setGeneratedCode(ext.boilerplate)
+          setLogoDataUrl(ext.logoDataUrl)
+          setActiveTab("config")
+        }
+      })
+      return
+    }
+
+    // Reset for new extension
+    setCurrentExtensionId(null)
 
     if (template.id === "scratch") {
       setConfig({
-        name: storedTemplateConfig?.name || "",
-        displayName: storedTemplateConfig?.displayName || "",
-        description: storedTemplateConfig?.description || "",
-        publisher: storedTemplateConfig?.publisher || stored.publisherName || "",
-        version: storedTemplateConfig?.version || "0.0.1",
-        category: storedTemplateConfig?.category || "Other",
-        activationEvents: storedTemplateConfig?.activationEvents || [],
-        contributes: storedTemplateConfig?.contributes || {},
+        name: "",
+        displayName: "",
+        description: "",
+        publisher: stored.publisherName || "",
+        version: "0.0.1",
+        category: "Other",
+        activationEvents: [],
+        contributes: {},
       })
-      setGeneratedCode(() => {
-        const base: Record<string, string> = {}
-        if (storedTemplateIcon) {
-          base["images/icon.png"] = storedTemplateIcon
-        }
-        return base
-      })
-      setLogoDataUrl(storedTemplateIcon || undefined)
+      setGeneratedCode({})
+      setLogoDataUrl(undefined)
       setActiveTab("ai")
     } else {
       const baseConfig: ExtensionConfig = {
@@ -157,34 +195,53 @@ export function ExtensionBuilder() {
         activationEvents: template.defaultConfig?.activationEvents || [],
         contributes: template.defaultConfig?.contributes || {},
       }
-      const newConfig: ExtensionConfig = {
-        ...baseConfig,
-        ...(storedTemplateConfig || {}),
-      }
-      setConfig(newConfig)
-      setGeneratedCode((prev) => {
-        const base = { ...template.boilerplate }
-        if (storedTemplateIcon) {
-          base["images/icon.png"] = storedTemplateIcon
-          if (base["package.json"]) {
-            try {
-              const pkg = JSON.parse(base["package.json"])
-              pkg.icon = "images/icon.png"
-              base["package.json"] = JSON.stringify(pkg, null, 2)
-            } catch {}
-          }
-        }
-        return base
-      })
-      setLogoDataUrl(storedTemplateIcon || undefined)
+      setConfig(baseConfig)
+      setGeneratedCode({ ...template.boilerplate })
+      setLogoDataUrl(undefined)
       setActiveTab("config")
-
       generateLogo(template, template.suggestedConfig.name)
     }
   }
 
   const handleConfigChange = (newConfig: ExtensionConfig) => {
     setConfig(newConfig)
+
+    // Sync config changes to package.json immediately when user changes config
+    if (Object.keys(generatedCode).length > 0 && generatedCode["package.json"]) {
+      try {
+        const pkg = JSON.parse(generatedCode["package.json"])
+        let changed = false
+
+        if (newConfig.name && pkg.name !== newConfig.name) {
+          pkg.name = newConfig.name
+          changed = true
+        }
+        if (newConfig.displayName && pkg.displayName !== newConfig.displayName) {
+          pkg.displayName = newConfig.displayName
+          changed = true
+        }
+        if (newConfig.description && pkg.description !== newConfig.description) {
+          pkg.description = newConfig.description
+          changed = true
+        }
+        if (newConfig.publisher && pkg.publisher !== newConfig.publisher) {
+          pkg.publisher = newConfig.publisher
+          changed = true
+        }
+        if (newConfig.version && pkg.version !== newConfig.version) {
+          pkg.version = newConfig.version
+          changed = true
+        }
+        if (newConfig.category && pkg.categories?.[0] !== newConfig.category) {
+          pkg.categories = [newConfig.category]
+          changed = true
+        }
+
+        if (changed) {
+          setGeneratedCode((prev) => ({ ...prev, "package.json": JSON.stringify(pkg, null, 2) }))
+        }
+      } catch {}
+    }
   }
 
   const handleAiGenerate = useCallback((code: Record<string, string>, extractedConfig?: Partial<ExtensionConfig>) => {
@@ -212,15 +269,10 @@ export function ExtensionBuilder() {
   const handleCodeChange = useCallback((files: Record<string, string>) => {
     setGeneratedCode(files)
 
-    if (selectedTemplate) {
-      if (files["images/icon.png"]) {
-        saveTemplateIcon(selectedTemplate.id, files["images/icon.png"])
-      } else {
-        saveTemplateIcon(selectedTemplate.id, null)
-      }
+    if (files["images/icon.png"]) {
+      setLogoDataUrl(files["images/icon.png"])
     }
 
-    // If package.json was edited, sync config
     if (files["package.json"]) {
       try {
         const pkg = JSON.parse(files["package.json"])
@@ -233,15 +285,16 @@ export function ExtensionBuilder() {
           version: pkg.version || prev.version,
           category: pkg.categories?.[0] || prev.category,
         }))
-      } catch {
-        // Invalid JSON, ignore
-      }
+      } catch {}
     }
-  }, [selectedTemplate])
+  }, [])
 
-  const handleStreamingUpdate = useCallback((file: string | null, content: string) => {
-    setStreamingFile(file)
-    setStreamingContent(content)
+  const handleStreamingUpdate = useCallback((allFiles: Record<string, string>, currentFile: string | null) => {
+    setStreamingFiles(allFiles)
+    setStreamingFile(currentFile)
+    if (currentFile && allFiles[currentFile]) {
+      setStreamingContent(allFiles[currentFile])
+    }
   }, [])
 
   const handleLogoGenerated = useCallback((dataUrl: string) => {
@@ -258,66 +311,17 @@ export function ExtensionBuilder() {
       }
       return newCode
     })
-    if (selectedTemplate) {
-      saveTemplateIcon(selectedTemplate.id, dataUrl)
-    }
-  }, [selectedTemplate])
+  }, [])
 
-  useEffect(() => {
-    if (Object.keys(generatedCode).length === 0) return
-
-    // Update package.json when config changes
-    setGeneratedCode((prev) => {
-      const currentPkg = prev["package.json"]
-      if (!currentPkg) return prev
-
-      try {
-        const pkg = JSON.parse(currentPkg)
-        let changed = false
-
-        if (config.name && pkg.name !== config.name) {
-          pkg.name = config.name
-          changed = true
-        }
-        if (config.displayName && pkg.displayName !== config.displayName) {
-          pkg.displayName = config.displayName
-          changed = true
-        }
-        if (config.description && pkg.description !== config.description) {
-          pkg.description = config.description
-          changed = true
-        }
-        if (config.publisher && pkg.publisher !== config.publisher) {
-          pkg.publisher = config.publisher
-          changed = true
-        }
-        if (config.version && pkg.version !== config.version) {
-          pkg.version = config.version
-          changed = true
-        }
-        if (config.category && pkg.categories?.[0] !== config.category) {
-          pkg.categories = [config.category]
-          changed = true
-        }
-
-        if (changed) {
-          return { ...prev, "package.json": JSON.stringify(pkg, null, 2) }
-        }
-        return prev
-      } catch {
-        return prev
-      }
-    })
-  }, [config.name, config.displayName, config.description, config.publisher, config.version, config.category])
-
-  useEffect(() => {
-    if (!selectedTemplate) return
-    saveTemplateConfig(selectedTemplate.id, config)
-  }, [selectedTemplate, config])
+  const canSave = Object.keys(generatedCode).length > 0 && (config.name || config.displayName)
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
+      <Header
+        extensionName={config.displayName || config.name}
+        onSaveExtension={handleSaveExtension}
+        canSave={canSave}
+      />
       <main className="w-full max-w-none px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 xl:grid-cols-[400px_1fr] gap-8">
           <div className="space-y-6">
@@ -390,6 +394,7 @@ export function ExtensionBuilder() {
               streamingFile={streamingFile}
               streamingContent={streamingContent}
               logoDataUrl={logoDataUrl}
+              streamingFiles={streamingFiles}
             />
           </div>
         </div>

@@ -32,3 +32,27 @@ export interface Template {
   }
   suggestedLogo?: LogoConfig
 }
+
+export interface ExtensionProject {
+  id: string
+  name: string
+  createdAt: number
+  updatedAt: number
+  templateId: string | null
+  config: ExtensionConfig
+  code: Record<string, string>
+  logoDataUrl?: string
+}
+
+export interface UserExtension {
+  id: string
+  name: string
+  displayName: string
+  description: string
+  tags: string[]
+  boilerplate: Record<string, string>
+  config: ExtensionConfig
+  logoDataUrl?: string
+  createdAt: number
+  updatedAt: number
+}

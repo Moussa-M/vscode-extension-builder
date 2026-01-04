@@ -29,7 +29,7 @@ interface AiAssistantProps {
   generatedCode: Record<string, string>
   onGenerate: (code: Record<string, string>, config?: Partial<ExtensionConfig>) => void
   onConfigUpdate: (config: ExtensionConfig) => void
-  onStreamingUpdate?: (file: string | null, content: string) => void
+  onStreamingUpdate?: (allFiles: Record<string, string>, currentFile: string | null) => void
 }
 
 interface GenerationResult {
@@ -446,22 +446,40 @@ export function AiAssistant({
   }
 
   const extractPartialFiles = useCallback(
-    (text: string): { files: string[]; currentFile: string | null; currentContent: string } => {
+    (
+      text: string,
+    ): {
+      files: string[]
+      currentFile: string | null
+      currentContent: string
+      completedFiles: Record<string, string>
+    } => {
       const files: string[] = []
+      const completedFiles: Record<string, string> = {}
       let currentFile: string | null = null
       let currentContent = ""
 
-      // Match complete file entries
-      const completeFileRegex = /"([^"]+\.(ts|tsx|json|md|gitignore|vscodeignore|Makefile))":\s*"((?:[^"\\]|\\.)*)"/g
+      // Match complete file entries and extract their content
+      const completeFileRegex =
+        /"([^"]+\.(ts|tsx|json|md|gitignore|vscodeignore|Makefile|LICENSE|png))":\s*"((?:[^"\\]|\\.)*)"/g
       let match
       while ((match = completeFileRegex.exec(text)) !== null) {
-        if (!files.includes(match[1])) {
-          files.push(match[1])
+        const filename = match[1]
+        const content = match[3]
+          .replace(/\\n/g, "\n")
+          .replace(/\\t/g, "\t")
+          .replace(/\\r/g, "\r")
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, "\\")
+        if (!files.includes(filename)) {
+          files.push(filename)
         }
+        completedFiles[filename] = content
       }
 
       // Find the currently streaming file (incomplete)
-      const incompleteFileRegex = /"([^"]+\.(ts|tsx|json|md|gitignore|vscodeignore|Makefile))":\s*"((?:[^"\\]|\\.)*)$/
+      const incompleteFileRegex =
+        /"([^"]+\.(ts|tsx|json|md|gitignore|vscodeignore|Makefile|LICENSE|png))":\s*"((?:[^"\\]|\\.)*)$/
       const incompleteMatch = text.match(incompleteFileRegex)
       if (incompleteMatch) {
         currentFile = incompleteMatch[1]
@@ -469,6 +487,7 @@ export function AiAssistant({
         currentContent = incompleteMatch[3]
           .replace(/\\n/g, "\n")
           .replace(/\\t/g, "\t")
+          .replace(/\\r/g, "\r")
           .replace(/\\"/g, '"')
           .replace(/\\\\/g, "\\")
         if (!files.includes(currentFile)) {
@@ -476,7 +495,7 @@ export function AiAssistant({
         }
       }
 
-      return { files, currentFile, currentContent }
+      return { files, currentFile, currentContent, completedFiles }
     },
     [],
   )
@@ -528,7 +547,7 @@ export function AiAssistant({
           const chunk = decoder.decode(value, { stream: true })
           fullText += chunk
 
-          const { files, currentFile, currentContent } = extractPartialFiles(fullText)
+          const { files, currentFile, currentContent, completedFiles } = extractPartialFiles(fullText)
 
           if (files.length > 0) {
             setStreamingFiles(files)
@@ -539,14 +558,18 @@ export function AiAssistant({
             setCurrentStreamingFile(currentFile)
             setCurrentStreamingContent(currentContent)
             setGenerationStage(`Writing ${currentFile}...`)
-            onStreamingUpdate?.(currentFile, currentContent)
+            const streamingFilesState = { ...completedFiles }
+            if (currentFile && currentContent) {
+              streamingFilesState[currentFile] = currentContent
+            }
+            onStreamingUpdate?.(streamingFilesState, currentFile)
           }
         }
       }
 
       setGenerationProgress(100)
       setGenerationStage("Complete!")
-      onStreamingUpdate?.(null, "")
+      onStreamingUpdate?.({}, null)
 
       const result = parseAIResponse(fullText)
 

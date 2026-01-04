@@ -42,6 +42,7 @@ interface CodePreviewProps {
   streamingFile?: string | null
   streamingContent?: string
   logoDataUrl?: string // Added logoDataUrl prop
+  streamingFiles?: Record<string, string> // Added streamingFiles prop
 }
 
 function highlightCode(code: string, language: string): React.ReactNode[] {
@@ -172,7 +173,8 @@ export function CodePreview({
   onCodeChange,
   streamingFile,
   streamingContent,
-  logoDataUrl, // Added logoDataUrl
+  logoDataUrl,
+  streamingFiles = {}, // Added streamingFiles
 }: CodePreviewProps) {
   const [activeFile, setActiveFile] = useState("package.json")
   const [copied, setCopied] = useState(false)
@@ -293,7 +295,7 @@ export function CodePreview({
 
   const fileTree = useMemo(() => {
     const tree: Record<string, string[]> = { root: [] }
-    const allFiles = { ...files }
+    const allFiles = { ...files, ...streamingFiles } // Merge streaming files with regular files
     if (streamingFile && !allFiles[streamingFile]) {
       allFiles[streamingFile] = streamingContent || ""
     }
@@ -308,23 +310,21 @@ export function CodePreview({
       }
     })
     return tree
-  }, [files, streamingFile, streamingContent])
+  }, [files, streamingFile, streamingContent, streamingFiles])
 
   const isEmpty = Object.keys(files).length === 0 && !streamingFile
 
   const displayContent = useMemo(() => {
     if (isEditing) return editedContent
+    if (streamingFiles[activeFile]) {
+      // Check streaming files first
+      return streamingFiles[activeFile]
+    }
     if (streamingFile === activeFile && streamingContent !== undefined) {
       return streamingContent
     }
     return files[activeFile] || ""
-  }, [isEditing, editedContent, streamingFile, activeFile, streamingContent, files])
-
-  const highlightedCode = useMemo(() => {
-    if (!displayContent) return null
-    const ext = getFileExtension(activeFile)
-    return highlightCode(displayContent, ext)
-  }, [displayContent, activeFile])
+  }, [isEditing, editedContent, streamingFile, activeFile, streamingContent, files, streamingFiles])
 
   const isStreaming = streamingFile === activeFile
 
@@ -513,10 +513,10 @@ export function CodePreview({
                 spellCheck={false}
               />
             ) : (
-                        <div className="flex-1 overflow-auto" ref={codeContainerRef}>
+              <div className="flex-1 overflow-auto" ref={codeContainerRef}>
                 <pre className="p-4 text-[13px] font-mono leading-6 min-w-max">
                   <code>
-                    {highlightedCode}
+                    {highlightCode(displayContent, getFileExtension(activeFile))}
                     {isStreaming && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />}
                   </code>
                 </pre>
