@@ -34,6 +34,7 @@ interface PublishModalProps {
   config: ExtensionConfig
   files: Record<string, string>
   logoDataUrl?: string
+  onSave?: () => Promise<boolean>
 }
 
 type PublishStep = "tokens" | "github" | "marketplace" | "done"
@@ -50,7 +51,7 @@ interface PublishState {
   openVsxPublishedUrl: string | null
 }
 
-export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }: PublishModalProps) {
+export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, onSave }: PublishModalProps) {
   const [currentStep, setCurrentStep] = useState<PublishStep>("tokens")
   const [state, setState] = useState<PublishState>({
     githubToken: "",
@@ -199,6 +200,11 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       setError(null)
 
       try {
+        // Save extension before pushing
+        if (onSave) {
+          await onSave()
+        }
+
         const [fallbackOwner, repo] = targetRepo.split("/")
         const owner = repoOwner || fallbackOwner
 
@@ -228,9 +234,10 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         setLoading(null)
       }
     },
-    [state.githubToken, state.createdRepo, filesWithLogo, config],
+    [state.githubToken, state.createdRepo, filesWithLogo, config, onSave],
   )
 
+  // Publish to VS Code Marketplace
   const publishToMarketplace = useCallback(async () => {
     if (!state.publisherName) {
       setError("Publisher name is required")
@@ -243,6 +250,11 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
     setFallbackVsix(null)
 
     try {
+      // Save extension before publishing
+      if (onSave) {
+        await onSave()
+      }
+
       const response = await fetch("/api/vsce/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -281,61 +293,49 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
     } finally {
       setLoading(null)
     }
-  }, [state.azureToken, state.publisherName, config.name, filesWithLogo])
+  }, [state.azureToken, state.publisherName, config.name, filesWithLogo, onSave])
 
+  // Publish to Open VSX
   const publishToOpenVsx = useCallback(async () => {
-    if (!state.openVsxToken || !state.publisherName) {
-      setError("Open VSX token and publisher name are required")
+    if (!state.openVsxToken) {
+      setError("Open VSX token is required")
       return
     }
 
     setLoading("publishing-openvsx")
     setError(null)
-    setErrorSuggestion(null)
 
     try {
-      console.log("[OpenVSX] Publishing extension:", { publisher: state.publisherName, extension: config.name })
+      // Save extension before publishing
+      if (onSave) {
+        await onSave()
+      }
 
       const response = await fetch("/api/openvsx/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          openVsxToken: state.openVsxToken,
-          publisher: state.publisherName,
-          extensionName: config.name || "my-extension",
+          token: state.openVsxToken,
           files: filesWithLogo,
         }),
       })
 
       const data = await response.json()
 
-      console.log("[OpenVSX] Response status:", response.status)
-      console.log("[OpenVSX] Response data:", data)
-
       if (!response.ok) {
-        if (data.suggestion) {
-          setErrorSuggestion(data.suggestion)
-        }
-        if (data.vsixBase64) {
-          setFallbackVsix(data.vsixBase64)
-        }
         throw new Error(data.error || "Failed to publish to Open VSX")
       }
-
-      // Log success
-      console.log("[OpenVSX] Successfully published! URL:", data.url)
 
       setState((prev) => ({
         ...prev,
         openVsxPublishedUrl: data.url || `https://open-vsx.org/extension/${state.publisherName}/${config.name}`,
       }))
     } catch (err) {
-      console.error("[OpenVSX] Error publishing:", err)
       setError(err instanceof Error ? err.message : "Failed to publish to Open VSX")
     } finally {
       setLoading(null)
     }
-  }, [state.openVsxToken, state.publisherName, config.name, filesWithLogo, currentStep])
+  }, [state.openVsxToken, state.publisherName, config.name, filesWithLogo, onSave])
 
   // Download .vsix package
   const downloadVsix = useCallback(async () => {
@@ -358,7 +358,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
           if (pkg.icon) {
             iconPath = pkg.icon
           }
-        } catch { }
+        } catch {}
       }
 
       for (const [path, content] of Object.entries(filesWithLogo)) {
@@ -690,7 +690,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       {state.createdRepo && (
         <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 space-y-2">
           <p className="text-sm text-green-400 flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4" />
+            <CheckCircle2 className="h-5 w-5" />
             Repository created and files pushed!
           </p>
           <a
@@ -749,12 +749,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         {state.publishedUrl && (
           <div className="text-xs text-green-400 flex items-center gap-2 mt-2">
             <CheckCircle2 className="h-3 w-3" />
-            <a
-              className="underline"
-              href={state.publishedUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a className="underline" href={state.publishedUrl} target="_blank" rel="noreferrer">
               Published to VS Marketplace
             </a>
           </div>
@@ -802,12 +797,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
         {state.openVsxPublishedUrl && (
           <div className="text-xs text-green-400 flex items-center gap-2 mt-2">
             <CheckCircle2 className="h-3 w-3" />
-            <a
-              className="underline"
-              href={state.openVsxPublishedUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a className="underline" href={state.openVsxPublishedUrl} target="_blank" rel="noreferrer">
               Published to Open VSX
             </a>
           </div>
@@ -915,71 +905,75 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
       { label: "Cursor", url: `cursor:extension/${extensionSlug}`, color: "text-cyan-400" },
       { label: "Windsurf", url: `windsurf:extension/${extensionSlug}`, color: "text-emerald-400" },
       { label: "Antigravity", url: `antigravity:extension/${extensionSlug}`, color: "text-amber-400" },
-      { label: "Marketplace (web)", url: `https://marketplace.visualstudio.com/items?itemName=${extensionSlug}`, color: "text-blue-400" },
+      {
+        label: "Marketplace (web)",
+        url: `https://marketplace.visualstudio.com/items?itemName=${extensionSlug}`,
+        color: "text-blue-400",
+      },
       { label: "Open VSX (web)", url: `https://open-vsx.org/extension/${publisher}/${name}`, color: "text-green-400" },
     ]
 
     return (
       <div className="space-y-4 text-center py-6">
-      <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto animate-in zoom-in-50 duration-300">
-        <CheckCircle2 className="h-8 w-8 text-green-400" />
-      </div>
-      <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-150">
-        <h3 className="font-semibold text-lg">Extension Package Ready!</h3>
-        <p className="text-sm text-muted-foreground mt-1">Your extension is ready for publishing</p>
-      </div>
-
-      {fallbackVsix && (
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-200">
-          <Button
-            onClick={downloadFallbackVsix}
-            className="bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Download .vsix Package
-          </Button>
+        <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto animate-in zoom-in-50 duration-300">
+          <CheckCircle2 className="h-8 w-8 text-green-400" />
         </div>
-      )}
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-150">
+          <h3 className="font-semibold text-lg">Extension Package Ready!</h3>
+          <p className="text-sm text-muted-foreground mt-1">Your extension is ready for publishing</p>
+        </div>
 
-      <div className="flex flex-col sm:flex-row gap-2 justify-center pt-4 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-300">
-        <a
-          href={
-            state.publishedUrl ||
-            `https://marketplace.visualstudio.com/manage/publishers/${state.publisherName || config.publisher}`
-          }
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
-        >
-          <Package className="h-4 w-4" />
-          VS Marketplace
-          <ExternalLink className="h-3 w-3" />
-        </a>
+        {fallbackVsix && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-200">
+            <Button
+              onClick={downloadFallbackVsix}
+              className="bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download .vsix Package
+            </Button>
+          </div>
+        )}
 
-        <a
-          href={state.openVsxPublishedUrl || `https://open-vsx.org/extension/${state.publisherName}/${config.name}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors"
-        >
-          <Globe className="h-4 w-4" />
-          Open VSX
-          <ExternalLink className="h-3 w-3" />
-        </a>
-
-        {state.createdRepo && (
+        <div className="flex flex-col sm:flex-row gap-2 justify-center pt-4 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-300">
           <a
-            href={state.createdRepo.url}
+            href={
+              state.publishedUrl ||
+              `https://marketplace.visualstudio.com/manage/publishers/${state.publisherName || config.publisher}`
+            }
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-muted hover:bg-muted/80 text-sm font-medium transition-colors"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
           >
-            <Github className="h-4 w-4" />
-            GitHub
+            <Package className="h-4 w-4" />
+            VS Marketplace
             <ExternalLink className="h-3 w-3" />
           </a>
-        )}
-      </div>
+
+          <a
+            href={state.openVsxPublishedUrl || `https://open-vsx.org/extension/${state.publisherName}/${config.name}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors"
+          >
+            <Globe className="h-4 w-4" />
+            Open VSX
+            <ExternalLink className="h-3 w-3" />
+          </a>
+
+          {state.createdRepo && (
+            <a
+              href={state.createdRepo.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-muted hover:bg-muted/80 text-sm font-medium transition-colors"
+            >
+              <Github className="h-4 w-4" />
+              GitHub
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
 
         <Button variant="outline" onClick={() => onOpenChange(false)} className="mt-4">
           Done
@@ -995,7 +989,9 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
                 target="_blank"
                 rel="noreferrer"
               >
-                <span className="truncate text-center">{link.label}: {link.url}</span>
+                <span className="truncate text-center">
+                  {link.label}: {link.url}
+                </span>
                 <ExternalLink className="h-3 w-3" />
               </a>
             ))}
@@ -1034,18 +1030,20 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl }:
                   disabled={loading !== null}
                 >
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isPast
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                      isPast
                         ? "bg-green-500/20 text-green-400"
                         : isActive
                           ? "bg-violet-500/20 text-violet-400 ring-2 ring-violet-500/50"
                           : "bg-muted text-muted-foreground"
-                      }`}
+                    }`}
                   >
                     {isPast ? <CheckCircle2 className="h-5 w-5" /> : <StepIcon className="h-5 w-5" />}
                   </div>
                   <span
-                    className={`text-xs font-medium ${isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
-                      }`}
+                    className={`text-xs font-medium ${
+                      isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
+                    }`}
                   >
                     {step.label}
                   </span>

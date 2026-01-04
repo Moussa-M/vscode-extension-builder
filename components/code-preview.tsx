@@ -43,6 +43,7 @@ interface CodePreviewProps {
   streamingContent?: string
   logoDataUrl?: string // Added logoDataUrl prop
   streamingFiles?: Record<string, string> // Added streamingFiles prop
+  onSave?: () => Promise<boolean>
 }
 
 function highlightCode(code: string, language: string): React.ReactNode[] {
@@ -175,6 +176,7 @@ export function CodePreview({
   streamingContent,
   logoDataUrl,
   streamingFiles = {}, // Added streamingFiles
+  onSave,
 }: CodePreviewProps) {
   const [activeFile, setActiveFile] = useState("package.json")
   const [copied, setCopied] = useState(false)
@@ -531,6 +533,7 @@ export function CodePreview({
         config={config}
         files={files}
         logoDataUrl={logoDataUrl}
+        onSave={onSave}
       />
     </Card>
   )

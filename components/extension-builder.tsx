@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Header } from "./header"
 import { TemplateSelector } from "./template-selector"
 import { ConfigPanel } from "./config-panel"
@@ -33,9 +33,6 @@ export function ExtensionBuilder() {
   const [streamingContent, setStreamingContent] = useState("")
   const [streamingFiles, setStreamingFiles] = useState<Record<string, string>>({})
   const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>()
-  const [isSaving, setIsSaving] = useState(false)
-  const [lastSaved, setLastSaved] = useState<Date | null>(null)
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // Load publisher from stored credentials on mount
   useEffect(() => {
@@ -47,15 +44,8 @@ export function ExtensionBuilder() {
 
   const handleSaveExtension = useCallback(async () => {
     if (!config.name && !config.displayName) {
-      toast({
-        title: "Cannot save",
-        description: "Please provide a name for your extension first.",
-        variant: "destructive",
-      })
-      return
+      return false
     }
-
-    setIsSaving(true)
 
     const extension: UserExtension = {
       id: currentExtensionId || `ext_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
@@ -75,36 +65,13 @@ export function ExtensionBuilder() {
     await saveUserExtension(extension)
     setCurrentExtensionId(extension.id)
 
-    setLastSaved(new Date())
-    setTimeout(() => setIsSaving(false), 500)
-
     toast({
       title: "Extension saved",
       description: `"${extension.displayName}" has been saved to My Extensions.`,
     })
+
+    return true
   }, [config, generatedCode, logoDataUrl, currentExtensionId, toast])
-
-  useEffect(() => {
-    const canAutoSave = Object.keys(generatedCode).length > 0 && (config.name || config.displayName)
-
-    if (!canAutoSave) return
-
-    // Clear existing timer
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current)
-    }
-
-    // Set new timer for auto-save
-    autoSaveTimerRef.current = setTimeout(() => {
-      handleSaveExtension()
-    }, 2000)
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current)
-      }
-    }
-  }, [config, generatedCode, logoDataUrl, handleSaveExtension])
 
   const generateLogo = useCallback((template: Template, extensionName: string) => {
     if (!template || template.id === "scratch") return
@@ -343,17 +310,9 @@ export function ExtensionBuilder() {
     })
   }, [])
 
-  const canSave = Object.keys(generatedCode).length > 0 && (config.name || config.displayName)
-
   return (
     <div className="min-h-screen bg-background">
-      <Header
-        extensionName={config.displayName || config.name}
-        onSaveExtension={handleSaveExtension}
-        canSave={canSave}
-        isSaving={isSaving}
-        lastSaved={lastSaved}
-      />
+      <Header extensionName={config.displayName || config.name} />
       <main className="w-full max-w-none px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 xl:grid-cols-[400px_1fr] gap-8">
           <div className="space-y-6">
@@ -427,6 +386,7 @@ export function ExtensionBuilder() {
               streamingContent={streamingContent}
               logoDataUrl={logoDataUrl}
               streamingFiles={streamingFiles}
+              onSave={handleSaveExtension}
             />
           </div>
         </div>
