@@ -113,11 +113,18 @@ export async function POST(req: NextRequest) {
     let commitSha: string | null = null
     let treeSha: string | null = null
     let branch = "main"
+    let isEmptyRepo = false
 
     for (const b of ["main", "master"]) {
       const refResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${b}`, {
         headers,
       })
+
+      if (refResponse.status === 409) {
+        // Empty repository
+        isEmptyRepo = true
+        break
+      }
 
       if (refResponse.ok) {
         const refData = await refResponse.json()
@@ -137,39 +144,104 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!commitSha) {
-      try {
-        const commitData = await pushWithGitDataApi(headers, owner, repo, files, commitMessage, null, null)
+    if (isEmptyRepo || !commitSha) {
+      // Find a simple text file to initialize with (prefer README.md or package.json)
+      const initPath = files["README.md"] ? "README.md" : files["package.json"] ? "package.json" : Object.keys(files)[0]
+      const initFile = files[initPath]
 
-        // Create the main branch ref
-        const refResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            ref: "refs/heads/main",
-            sha: commitData.sha,
-          }),
-        })
+      let content = typeof initFile === "string" ? initFile : String(initFile)
 
-        if (!refResponse.ok) {
-          const error = await refResponse.json().catch(() => ({ message: "Unknown error" }))
-          return NextResponse.json({ error: `Failed to create branch: ${error.message}` }, { status: 500 })
-        }
-
-        return NextResponse.json({
-          success: true,
-          commit: {
-            sha: commitData.sha,
-            url: `https://github.com/${owner}/${repo}/commit/${commitData.sha}`,
-            message: commitData.message,
-          },
-        })
-      } catch (err) {
-        return NextResponse.json(
-          { error: err instanceof Error ? err.message : "Failed to push files" },
-          { status: 500 },
-        )
+      // Handle data URLs for binary files
+      if (content.startsWith("data:")) {
+        content = content.split(",")[1] || ""
+      } else {
+        content = Buffer.from(content).toString("base64")
       }
+
+      // Use Contents API to create initial file (works on empty repos)
+      const initResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${initPath}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          message: "Initial commit",
+          content,
+          branch: "main",
+        }),
+      })
+
+      if (!initResponse.ok) {
+        const error = await initResponse.json().catch(() => ({ message: "Unknown error" }))
+        return NextResponse.json({ error: `Failed to initialize repository: ${error.message}` }, { status: 500 })
+      }
+
+      const initData = await initResponse.json()
+      commitSha = initData.commit.sha
+      branch = "main"
+
+      // Get the tree SHA from the new commit
+      const commitResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${commitSha}`, {
+        headers,
+      })
+
+      if (commitResponse.ok) {
+        const commitData = await commitResponse.json()
+        treeSha = commitData.tree.sha
+      }
+
+      // Remove the init file from files to avoid duplicating it
+      const remainingFiles = { ...files }
+      delete remainingFiles[initPath]
+
+      // If there are more files, push them
+      if (Object.keys(remainingFiles).length > 0) {
+        try {
+          const commitData = await pushWithGitDataApi(
+            headers,
+            owner,
+            repo,
+            remainingFiles,
+            commitMessage || "Add extension files",
+            commitSha,
+            treeSha,
+          )
+
+          // Update the ref
+          const refResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ sha: commitData.sha, force: true }),
+          })
+
+          if (!refResponse.ok) {
+            const error = await refResponse.json().catch(() => ({ message: "Unknown error" }))
+            return NextResponse.json({ error: `Failed to update ref: ${error.message}` }, { status: 500 })
+          }
+
+          return NextResponse.json({
+            success: true,
+            commit: {
+              sha: commitData.sha,
+              url: `https://github.com/${owner}/${repo}/commit/${commitData.sha}`,
+              message: commitData.message,
+            },
+          })
+        } catch (err) {
+          return NextResponse.json(
+            { error: err instanceof Error ? err.message : "Failed to push files" },
+            { status: 500 },
+          )
+        }
+      }
+
+      // Only the init file was needed
+      return NextResponse.json({
+        success: true,
+        commit: {
+          sha: commitSha,
+          url: `https://github.com/${owner}/${repo}/commit/${commitSha}`,
+          message: "Initial commit",
+        },
+      })
     }
 
     try {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,6 +36,48 @@ export function ExtensionManagerModal({ isOpen, onClose, extension, onDelete }: 
     openvsx: { status: "idle", message: "" },
     local: { status: "idle", message: "" },
   })
+
+  useEffect(() => {
+    if (extension) {
+      const creds = getStoredCredentials()
+      if (creds.githubToken) {
+        fetch("https://api.github.com/user", {
+          headers: { Authorization: `Bearer ${creds.githubToken}` },
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.login) {
+              setRepoOwner(data.login)
+            }
+          })
+          .catch(() => {
+            const repoUrl = extension.code?.["package.json"]
+            if (repoUrl) {
+              try {
+                const pkg = JSON.parse(repoUrl)
+                if (pkg.repository?.url) {
+                  const match = pkg.repository.url.match(/github\.com\/([^/]+)\//)
+                  if (match) setRepoOwner(match[1])
+                }
+              } catch {}
+            }
+          })
+      }
+
+      setRepoName(extension.config.name || extension.name || "")
+    }
+  }, [extension])
+
+  useEffect(() => {
+    if (isOpen) {
+      setActionState({
+        github: { status: "idle", message: "" },
+        vscode: { status: "idle", message: "" },
+        openvsx: { status: "idle", message: "" },
+        local: { status: "idle", message: "" },
+      })
+    }
+  }, [isOpen, extension?.id])
 
   if (!extension) return null
 
