@@ -75,13 +75,17 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {}`,
       "tsconfig.json": `{
   "compilerOptions": {
-    "module": "commonjs",
-    "target": "ES2020",
+    "module": "Node16",
+    "target": "ES2022",
     "outDir": "out",
-    "lib": ["ES2020"],
+    "lib": ["ES2022"],
     "sourceMap": true,
     "rootDir": "src",
-    "strict": true
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Node16"
   },
   "exclude": ["node_modules", ".vscode-test"]
 }`,
@@ -286,13 +290,17 @@ function getWebviewContent() {
 export function deactivate() {}`,
       "tsconfig.json": `{
   "compilerOptions": {
-    "module": "commonjs",
-    "target": "ES2020",
+    "module": "Node16",
+    "target": "ES2022",
     "outDir": "out",
-    "lib": ["ES2020"],
+    "lib": ["ES2022"],
     "sourceMap": true,
     "rootDir": "src",
-    "strict": true
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Node16"
   },
   "exclude": ["node_modules"]
 }`,
@@ -407,13 +415,17 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {}`,
       "tsconfig.json": `{
   "compilerOptions": {
-    "module": "commonjs",
-    "target": "ES2020",
+    "module": "Node16",
+    "target": "ES2022",
     "outDir": "out",
-    "lib": ["ES2020"],
+    "lib": ["ES2022"],
     "sourceMap": true,
     "rootDir": "src",
-    "strict": true
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Node16"
   },
   "exclude": ["node_modules"]
 }`,

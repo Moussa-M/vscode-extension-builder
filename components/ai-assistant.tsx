@@ -1,30 +1,30 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useRef, useEffect, useCallback } from "react"
 import {
   Sparkles,
   Send,
-  Wand2,
-  Plus,
   RefreshCw,
-  Zap,
   FileCode,
   Check,
   Loader2,
   Terminal,
   Cpu,
-  Code2,
-  AlertCircle,
-  Play,
-  RotateCcw,
+  StopCircle,
+  ChevronRight,
+  AlertTriangle,
+  Wrench,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import type { ExtensionConfig, Template } from "@/lib/types"
+import { Progress } from "@/components/ui/progress"
+import { motion, AnimatePresence } from "framer-motion"
 
 interface AiAssistantProps {
   config: ExtensionConfig
@@ -55,6 +55,8 @@ interface Message {
   content: string
   files?: Record<string, string>
   isGenerating?: boolean
+  isError?: boolean
+  validationStatus?: "valid" | "has-errors" | undefined
 }
 
 function StreamingFileDisplay({
@@ -148,6 +150,8 @@ function GenerationProgress({ stage, progress }: { stage: string; progress: numb
   )
 }
 
+// NOTE: The suggestions were also updated in the updates section,
+// so this section is effectively redundant, but kept for structure.
 const featureSuggestions = [
   "Add a status bar item showing current line count",
   "Create a command to format selected JSON",
@@ -188,13 +192,34 @@ export function AiAssistant({
   const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const scrollToBottom = () => {
+  const [isValidating, setIsValidating] = useState(false)
+  const [validationErrors, setValidationErrors] = useState<
+    Array<{ file: string; line: number; column: number; message: string }>
+  >([])
+  const [fixAttempts, setFixAttempts] = useState(0)
+  const [isAutoFixing, setIsAutoFixing] = useState(false)
+  const MAX_FIX_ATTEMPTS = 3
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
+  }, [])
+
+  const adjustTextareaHeight = useCallback(() => {
+    const textarea = textareaRef.current
+    if (textarea) {
+      textarea.style.height = "auto"
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 150)}px`
+    }
+  }, [])
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [messages, scrollToBottom])
+
+  useEffect(() => {
+    adjustTextareaHeight()
+  }, [prompt, adjustTextareaHeight])
 
   const parseAIResponse = (text: string): GenerationResult | null => {
     try {
@@ -294,223 +319,269 @@ export function AiAssistant({
     return result
   }
 
-  const processParseResult = (parsed: Record<string, unknown>): GenerationResult | null => {
-    if (!parsed.files || typeof parsed.files !== "object") {
-      console.log("[v0] Parsed JSON missing files object")
-      return null
-    }
+  const processParseResult = (parsed: any): GenerationResult | null => {
+    if (parsed && typeof parsed === "object") {
+      const files = parsed.files || {}
+      if (Object.keys(files).length > 0) {
+        let extractedConfig: Partial<ExtensionConfig> | undefined
 
-    let extractedConfig: Partial<ExtensionConfig> | undefined
-    const files = parsed.files as Record<string, string>
-
-    if (files["package.json"]) {
-      try {
-        const pkgJson = JSON.parse(files["package.json"])
-        extractedConfig = {
-          name: pkgJson.name,
-          displayName: pkgJson.displayName,
-          description: pkgJson.description,
-          publisher: pkgJson.publisher,
-          version: pkgJson.version,
-          category: pkgJson.categories?.[0] || "Other",
-          activationEvents: pkgJson.activationEvents || [],
-          contributes: pkgJson.contributes || {},
+        if (files["package.json"]) {
+          try {
+            const pkgContent = files["package.json"]
+            const pkg = typeof pkgContent === "string" ? JSON.parse(pkgContent) : pkgContent
+            extractedConfig = {
+              name: pkg.name,
+              displayName: pkg.displayName,
+              description: pkg.description,
+              version: pkg.version,
+              publisher: pkg.publisher,
+              category: pkg.categories?.[0] || "Other",
+              contributes: pkg.contributes,
+            }
+          } catch (e) {
+            console.log("[v0] Could not parse package.json for config extraction")
+          }
         }
-      } catch {
-        console.log("[v0] Failed to parse package.json for config extraction")
+
+        return {
+          files,
+          message: parsed.message || "Generated successfully",
+          commands: parsed.commands || [],
+          activationEvents: parsed.activationEvents || [],
+          extractedConfig,
+        }
       }
     }
-
-    return {
-      message: (parsed.message as string) || "Code generated successfully",
-      files,
-      commands: (parsed.commands as string[]) || [],
-      activationEvents: (parsed.activationEvents as string[]) || [],
-      extractedConfig,
-    }
+    return null
   }
 
   const extractFilesWithStateMachine = (text: string): GenerationResult | null => {
     const files: Record<string, string> = {}
+    const filePattern =
+      /"([^"]+\.(ts|tsx|js|jsx|json|md|txt|gitignore|vscodeignore|yaml|yml|toml|Makefile|LICENSE|CHANGELOG\.md))"\s*:\s*"/gi
 
-    // Find "files": { in the text
-    const filesStart = text.indexOf('"files"')
-    if (filesStart === -1) {
-      console.log("[v0] No files key found in response")
-      return null
-    }
+    let match
+    while ((match = filePattern.exec(text)) !== null) {
+      const filename = match[1]
+      const startIndex = match.index + match[0].length
 
-    // Find the opening brace after "files":
-    const braceStart = text.indexOf("{", filesStart)
-    if (braceStart === -1) return null
+      let content = ""
+      const depth = 0
+      const inString = true
+      let escapeNext = false
 
-    let pos = braceStart + 1
-    let depth = 1
-    let currentKey = ""
-    let currentValue = ""
-    let inKey = false
-    let inValue = false
-    let escapeNext = false
+      for (let i = startIndex; i < text.length; i++) {
+        const char = text[i]
 
-    while (pos < text.length && depth > 0) {
-      const char = text[pos]
-
-      if (escapeNext) {
-        if (inValue) currentValue += char
-        escapeNext = false
-        pos++
-        continue
-      }
-
-      if (char === "\\") {
-        escapeNext = true
-        if (inValue) currentValue += char
-        pos++
-        continue
-      }
-
-      if (char === '"') {
-        if (!inKey && !inValue) {
-          // Starting a key or value
-          const colonPos = text.indexOf(":", pos)
-          const commaPos = text.indexOf(",", pos)
-          const bracePos = text.indexOf("}", pos)
-
-          // If colon comes before comma/brace, this is a key
-          if (colonPos !== -1 && (commaPos === -1 || colonPos < commaPos) && (bracePos === -1 || colonPos < bracePos)) {
-            inKey = true
-            currentKey = ""
-          } else {
-            inValue = true
-            currentValue = ""
-          }
-        } else if (inKey) {
-          inKey = false
-        } else if (inValue) {
-          inValue = false
-          // Save the file
-          if (currentKey && currentValue !== undefined) {
-            // Unescape the content
-            const unescaped = currentValue
-              .replace(/\\n/g, "\n")
-              .replace(/\\t/g, "\t")
-              .replace(/\\r/g, "\r")
-              .replace(/\\"/g, '"')
-              .replace(/\\\\/g, "\\")
-            files[currentKey] = unescaped
-          }
-          currentKey = ""
-          currentValue = ""
+        if (escapeNext) {
+          if (char === "n") content += "\n"
+          else if (char === "t") content += "\t"
+          else if (char === "r") content += "\r"
+          else if (char === '"') content += '"'
+          else if (char === "\\") content += "\\"
+          else content += char
+          escapeNext = false
+          continue
         }
-      } else if (inKey) {
-        currentKey += char
-      } else if (inValue) {
-        currentValue += char
-      } else if (char === "{") {
-        depth++
-      } else if (char === "}") {
-        depth--
-      }
 
-      pos++
-    }
-
-    if (Object.keys(files).length === 0) {
-      console.log("[v0] State machine extraction found no files")
-      return null
-    }
-
-    console.log("[v0] State machine extracted", Object.keys(files).length, "files")
-
-    // Try to extract message
-    const messageMatch = text.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/)
-    const message = messageMatch
-      ? messageMatch[1].replace(/\\"/g, '"').replace(/\\n/g, " ")
-      : "Code generated successfully"
-
-    // Extract config from package.json if available
-    let extractedConfig: Partial<ExtensionConfig> | undefined
-    if (files["package.json"]) {
-      try {
-        const pkgJson = JSON.parse(files["package.json"])
-        extractedConfig = {
-          name: pkgJson.name,
-          displayName: pkgJson.displayName,
-          description: pkgJson.description,
-          publisher: pkgJson.publisher,
-          version: pkgJson.version,
-          category: pkgJson.categories?.[0] || "Other",
-          activationEvents: pkgJson.activationEvents || [],
-          contributes: pkgJson.contributes || {},
+        if (char === "\\") {
+          escapeNext = true
+          continue
         }
-      } catch {
-        // Ignore parse errors
+
+        if (char === '"' && !escapeNext) {
+          break
+        }
+
+        content += char
+      }
+
+      if (content.length > 0) {
+        files[filename] = content
       }
     }
 
-    return {
-      message,
-      files,
-      commands: [],
-      activationEvents: [],
-      extractedConfig,
+    if (Object.keys(files).length > 0) {
+      return {
+        files,
+        message: "Extracted files from response",
+        commands: [],
+        activationEvents: [],
+      }
     }
+
+    return null
   }
 
-  const extractPartialFiles = useCallback(
-    (
-      text: string,
-    ): {
-      files: string[]
-      currentFile: string | null
-      currentContent: string
-      completedFiles: Record<string, string>
-    } => {
-      const files: string[] = []
-      const completedFiles: Record<string, string> = {}
-      let currentFile: string | null = null
-      let currentContent = ""
+  const extractPartialFiles = (
+    text: string,
+  ): {
+    files: string[]
+    currentFile: string | null
+    currentContent: string
+    completedFiles: Record<string, string>
+  } => {
+    const files: string[] = []
+    const completedFiles: Record<string, string> = {}
+    let currentFile: string | null = null
+    let currentContent = ""
 
-      // Match complete file entries and extract their content
-      const completeFileRegex =
-        /"([^"]+\.(ts|tsx|json|md|gitignore|vscodeignore|Makefile|LICENSE|png))":\s*"((?:[^"\\]|\\.)*)"/g
-      let match
-      while ((match = completeFileRegex.exec(text)) !== null) {
-        const filename = match[1]
-        const content = match[3]
-          .replace(/\\n/g, "\n")
-          .replace(/\\t/g, "\t")
-          .replace(/\\r/g, "\r")
-          .replace(/\\"/g, '"')
-          .replace(/\\\\/g, "\\")
-        if (!files.includes(filename)) {
-          files.push(filename)
+    const fileMatches = text.matchAll(
+      /"([^"]+\.(ts|tsx|js|jsx|json|md|txt|gitignore|vscodeignore|yaml|yml|Makefile|LICENSE))"\s*:\s*"/gi,
+    )
+
+    const matchArray = Array.from(fileMatches)
+
+    for (let i = 0; i < matchArray.length; i++) {
+      const match = matchArray[i]
+      const filename = match[1]
+
+      if (!files.includes(filename)) {
+        files.push(filename)
+      }
+
+      const startIndex = match.index! + match[0].length
+      const nextMatch = matchArray[i + 1]
+      const searchEndIndex = nextMatch ? nextMatch.index! : text.length
+
+      let content = ""
+      let escapeNext = false
+      let foundEnd = false
+
+      for (let j = startIndex; j < searchEndIndex; j++) {
+        const char = text[j]
+
+        if (escapeNext) {
+          if (char === "n") content += "\n"
+          else if (char === "t") content += "\t"
+          else if (char === "r") content += "\r"
+          else if (char === '"') content += '"'
+          else if (char === "\\") content += "\\"
+          else content += char
+          escapeNext = false
+          continue
         }
+
+        if (char === "\\") {
+          escapeNext = true
+          continue
+        }
+
+        if (char === '"') {
+          foundEnd = true
+          break
+        }
+
+        content += char
+      }
+
+      if (foundEnd && content.length > 0) {
         completedFiles[filename] = content
       }
 
-      // Find the currently streaming file (incomplete)
-      const incompleteFileRegex =
-        /"([^"]+\.(ts|tsx|json|md|gitignore|vscodeignore|Makefile|LICENSE|png))":\s*"((?:[^"\\]|\\.)*)$/
-      const incompleteMatch = text.match(incompleteFileRegex)
-      if (incompleteMatch) {
-        currentFile = incompleteMatch[1]
-        // Unescape the content
-        currentContent = incompleteMatch[3]
-          .replace(/\\n/g, "\n")
-          .replace(/\\t/g, "\t")
-          .replace(/\\r/g, "\r")
-          .replace(/\\"/g, '"')
-          .replace(/\\\\/g, "\\")
-        if (!files.includes(currentFile)) {
-          files.push(currentFile)
+      if (i === matchArray.length - 1) {
+        currentFile = filename
+        currentContent = content
+      }
+    }
+
+    return { files, currentFile, currentContent, completedFiles }
+  }
+
+  const validateFiles = async (
+    files: Record<string, string>,
+  ): Promise<{ valid: boolean; errors: Array<{ file: string; line: number; column: number; message: string }> }> => {
+    try {
+      const response = await fetch("/api/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Validation request failed")
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("[v0] Validation error:", error)
+      return { valid: true, errors: [] } // Assume valid on error to not block
+    }
+  }
+
+  const attemptAutoFix = async (
+    files: Record<string, string>,
+    errors: Array<{ file: string; line: number; column: number; message: string }>,
+  ) => {
+    if (fixAttempts >= MAX_FIX_ATTEMPTS) {
+      setGenerationStage("Max fix attempts reached. Manual review needed.")
+      setIsAutoFixing(false)
+      return files
+    }
+
+    setIsAutoFixing(true)
+    setFixAttempts((prev) => prev + 1)
+    setGenerationStage(`Auto-fixing syntax errors (attempt ${fixAttempts + 1}/${MAX_FIX_ATTEMPTS})...`)
+    setGenerationProgress(50)
+
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Fix the syntax errors",
+          config,
+          template: selectedTemplate,
+          mode: "modify",
+          existingFiles: files,
+          validationErrors: errors,
+          isFixAttempt: true,
+        }),
+      })
+
+      if (!response.ok) throw new Error("Fix attempt failed")
+
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let fullText = ""
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          fullText += decoder.decode(value, { stream: true })
         }
       }
 
-      return { files, currentFile, currentContent, completedFiles }
-    },
-    [],
-  )
+      const result = parseAIResponse(fullText)
+
+      if (result && Object.keys(result.files).length > 0) {
+        // Merge fixed files with existing files
+        const mergedFiles = { ...files, ...result.files }
+
+        // Validate the fixed files
+        setGenerationStage("Validating fixes...")
+        const revalidation = await validateFiles(mergedFiles)
+
+        if (revalidation.valid) {
+          setGenerationStage("All syntax errors fixed!")
+          setGenerationProgress(100)
+          setValidationErrors([])
+          setIsAutoFixing(false)
+          return mergedFiles
+        } else {
+          // Still has errors, try again
+          setValidationErrors(revalidation.errors)
+          return attemptAutoFix(mergedFiles, revalidation.errors)
+        }
+      }
+    } catch (error) {
+      console.error("[v0] Auto-fix error:", error)
+    }
+
+    setIsAutoFixing(false)
+    return files
+  }
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return
@@ -523,6 +594,9 @@ export function AiAssistant({
     setGenerationProgress(5)
     setErrorState(null)
     setRecoveredFiles({})
+    setValidationErrors([])
+    setFixAttempts(0)
+    setIsAutoFixing(false)
 
     const userMessage: Message = { role: "user", content: prompt }
     const assistantMessage: Message = { role: "assistant", content: "", isGenerating: true }
@@ -573,7 +647,7 @@ export function AiAssistant({
 
           if (files.length > 0) {
             setStreamingFiles(files)
-            setGenerationProgress(Math.min(20 + files.length * 10, 90))
+            setGenerationProgress(Math.min(20 + files.length * 10, 80))
           }
 
           if (currentFile) {
@@ -589,82 +663,108 @@ export function AiAssistant({
         }
       }
 
-      setGenerationProgress(100)
-      setGenerationStage("Complete!")
+      setGenerationProgress(85)
+      setGenerationStage("Parsing response...")
       onStreamingUpdate?.({}, null)
       setRecoveredFiles({})
 
       const result = parseAIResponse(fullText)
 
       if (result) {
+        let finalFiles = result.files
+
+        setGenerationStage("Validating syntax...")
+        setIsValidating(true)
+        setGenerationProgress(90)
+
+        const validation = await validateFiles(finalFiles)
+        setIsValidating(false)
+
+        if (!validation.valid && validation.errors.length > 0) {
+          setValidationErrors(validation.errors)
+          setGenerationStage(`Found ${validation.errors.length} syntax error(s). Auto-fixing...`)
+
+          // Attempt auto-fix
+          finalFiles = await attemptAutoFix(finalFiles, validation.errors)
+        }
+
+        setGenerationProgress(100)
+        setGenerationStage("Complete!")
+
         setMessages((prev) =>
           prev.map((m, i) =>
             i === prev.length - 1
               ? {
                   role: "assistant" as const,
                   content: result.message,
-                  files: result.files,
+                  files: finalFiles,
                   isGenerating: false,
+                  validationStatus: validationErrors.length > 0 ? "has-errors" : "valid",
                 }
               : m,
           ),
         )
 
-        onGenerate(result.files, result.extractedConfig)
+        onGenerate(finalFiles, result.extractedConfig)
 
         if (result.commands?.length || result.activationEvents?.length) {
           const existingCommands = (config.contributes?.commands as Array<{ command: string; title: string }>) || []
-          const newCommands = result.commands?.map((cmd) => ({
-            command: cmd.includes(".") ? cmd : `${config.name || "myext"}.${cmd}`,
-            title:
-              cmd
+          const newCommands =
+            result.commands?.map((cmd) => ({
+              command: cmd.includes(".") ? cmd : `${config.name || "myext"}.${cmd}`,
+              title: cmd
                 .split(".")
-                .pop()
-                ?.replace(/([A-Z])/g, " $1")
-                .trim() || cmd,
-          }))
+                .pop()!
+                .replace(/([A-Z])/g, " $1")
+                .trim(),
+            })) || []
+
+          const mergedCommands = [...existingCommands]
+          for (const cmd of newCommands) {
+            if (!mergedCommands.some((c) => c.command === cmd.command)) {
+              mergedCommands.push(cmd)
+            }
+          }
 
           onConfigUpdate({
             ...config,
-            activationEvents: [...new Set([...(config.activationEvents || []), ...(result.activationEvents || [])])],
             contributes: {
               ...config.contributes,
-              commands: [...existingCommands, ...(newCommands || [])],
+              commands: mergedCommands,
             },
           })
         }
       } else {
         if (Object.keys(streamedCompletedFiles).length > 0) {
           setErrorState({
-            message: "Generated code but couldn't parse the full response.",
+            message: "Could not parse full response, but some files were captured.",
             partialFiles: streamedCompletedFiles,
             lastPrompt: currentPrompt,
             timestamp: Date.now(),
           })
+
           onGenerate(streamedCompletedFiles)
         }
 
-        setMessages((prev) =>
-          prev.map((m, i) =>
-            i === prev.length - 1
-              ? {
-                  role: "assistant" as const,
-                  content:
-                    Object.keys(streamedCompletedFiles).length > 0
-                      ? `Partially generated ${Object.keys(streamedCompletedFiles).length} file(s). You can continue or retry.`
-                      : "Generated code but couldn't parse the response. Please try again.",
-                  files: streamedCompletedFiles,
-                  isGenerating: false,
-                }
-              : m,
-          ),
-        )
+        throw new Error("Could not parse AI response")
       }
     } catch (error) {
-      if ((error as Error).name !== "AbortError") {
+      if ((error as Error).name === "AbortError") {
         if (Object.keys(streamedCompletedFiles).length > 0) {
           setErrorState({
-            message: (error as Error).message || "An error occurred during generation",
+            message: "Generation was stopped, but partial files were saved.",
+            partialFiles: streamedCompletedFiles,
+            lastPrompt: currentPrompt,
+            timestamp: Date.now(),
+          })
+          onGenerate(streamedCompletedFiles)
+        }
+        setGenerationStage("Stopped")
+      } else {
+        console.error("Generation error:", error)
+        if (Object.keys(streamedCompletedFiles).length > 0) {
+          setErrorState({
+            message: `Error: ${(error as Error).message}. Partial files were saved.`,
             partialFiles: streamedCompletedFiles,
             lastPrompt: currentPrompt,
             timestamp: Date.now(),
@@ -677,12 +777,9 @@ export function AiAssistant({
             i === prev.length - 1
               ? {
                   role: "assistant" as const,
-                  content:
-                    Object.keys(streamedCompletedFiles).length > 0
-                      ? `Error occurred but saved ${Object.keys(streamedCompletedFiles).length} file(s). You can continue from where it stopped.`
-                      : "Sorry, there was an error generating the code. Please try again.",
-                  files: streamedCompletedFiles,
+                  content: `Generation error: ${(error as Error).message}`,
                   isGenerating: false,
+                  isError: true,
                 }
               : m,
           ),
@@ -690,21 +787,28 @@ export function AiAssistant({
       }
     } finally {
       setIsGenerating(false)
-      setStreamingFiles([])
-      setCurrentStreamingFile(null)
-      setCurrentStreamingContent("")
-      setGenerationStage("")
-      setGenerationProgress(0)
       setPrompt("")
       abortControllerRef.current = null
-      onStreamingUpdate?.(null, "")
     }
   }
 
-  const handleResume = () => {
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleGenerate()
+    }
+  }
+
+  const handleContinue = () => {
     if (errorState) {
       setRecoveredFiles(errorState.partialFiles)
-      setPrompt(`Continue from where you stopped. Already have: ${Object.keys(errorState.partialFiles).join(", ")}`)
+      setPrompt(`Continue from where we left off. Previous request: "${errorState.lastPrompt.slice(0, 100)}..."`)
       setErrorState(null)
     }
   }
@@ -713,256 +817,315 @@ export function AiAssistant({
     if (errorState) {
       setPrompt(errorState.lastPrompt)
       setErrorState(null)
+      setTimeout(() => handleGenerate(), 100)
     }
   }
 
-  const handleCancel = () => {
-    abortControllerRef.current?.abort()
+  const handleManualFix = async () => {
+    if (validationErrors.length === 0) return
+
+    const currentFiles = messages[messages.length - 1]?.files || generatedCode
+    if (Object.keys(currentFiles).length === 0) return
+
+    setIsGenerating(true)
+    setGenerationStage("Attempting manual fix...")
+
+    const fixedFiles = await attemptAutoFix(currentFiles, validationErrors)
+
+    if (Object.keys(fixedFiles).length > 0) {
+      onGenerate(fixedFiles)
+      setMessages((prev) => prev.map((m, i) => (i === prev.length - 1 ? { ...m, files: fixedFiles } : m)))
+    }
+
     setIsGenerating(false)
-    setStreamingFiles([])
-    setCurrentStreamingFile(null)
-    setCurrentStreamingContent("")
-    setGenerationStage("")
-    setGenerationProgress(0)
-    setMessages((prev) => prev.slice(0, -1))
-    onStreamingUpdate?.(null, "")
   }
 
-  const suggestions = mode === "generate-scratch" ? scratchSuggestions : featureSuggestions
+  const suggestions =
+    mode === "add-feature"
+      ? [
+          "Add a status bar item showing current file info",
+          "Create a custom tree view for the sidebar",
+          "Add keyboard shortcuts for common actions",
+          "Implement a webview panel with interactive UI",
+        ]
+      : [
+          "Create a Pomodoro timer extension w...",
+          "Build a Git commit message generator...",
+          "Create a code complexity analyzer e...",
+          "Build a TODO comment highlighter an...",
+        ]
 
   return (
-    <Card className="border-primary/20 bg-gradient-to-br from-background to-secondary/10 flex flex-col h-full">
-      <CardHeader className="pb-3 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <CardTitle className="text-base">AI Extension Generator</CardTitle>
-            <CardDescription className="text-xs">Powered by Claude</CardDescription>
-          </div>
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b border-zinc-800 bg-zinc-900/50 px-4 py-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/20">
+          <Sparkles className="h-5 w-5 text-white" />
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col flex-1 min-h-0 space-y-4">
-        <Tabs value={mode} onValueChange={(v) => setMode(v as typeof mode)} className="flex-shrink-0">
-          <TabsList className="grid w-full grid-cols-2 h-12">
-            <TabsTrigger value="add-feature" className="gap-2 data-[state=active]:bg-primary/10">
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Add Feature</span>
-              <span className="sm:hidden">Feature</span>
-            </TabsTrigger>
-            <TabsTrigger value="generate-scratch" className="gap-2 data-[state=active]:bg-primary/10">
-              <Wand2 className="w-4 h-4" />
-              <span className="hidden sm:inline">From Scratch</span>
-              <span className="sm:hidden">New</span>
-            </TabsTrigger>
-          </TabsList>
+        <div>
+          <h3 className="font-semibold text-white">AI Extension Generator</h3>
+          <p className="text-xs text-zinc-400">Powered by Claude</p>
+        </div>
+      </div>
 
-          <TabsContent value="add-feature" className="mt-4">
-            <p className="text-sm text-muted-foreground">Add new features to your existing extension</p>
-          </TabsContent>
+      {/* Mode Tabs */}
+      <div className="flex gap-2 border-b border-zinc-800 bg-zinc-900/30 px-4 py-2">
+        <Badge
+          variant={mode === "add-feature" ? "default" : "outline"}
+          className={cn(
+            "cursor-pointer transition-colors",
+            mode === "add-feature" ? "bg-violet-600 hover:bg-violet-700" : "hover:bg-zinc-800",
+          )}
+        >
+          + Add Feature
+        </Badge>
+        <Badge
+          variant={mode === "generate-scratch" ? "default" : "outline"}
+          className={cn(
+            "cursor-pointer transition-colors",
+            mode === "generate-scratch" ? "bg-violet-600 hover:bg-violet-700" : "hover:bg-zinc-800",
+          )}
+        >
+          <Sparkles className="mr-1 h-3 w-3" />
+          From Scratch
+        </Badge>
+      </div>
 
-          <TabsContent value="generate-scratch" className="mt-4">
-            <p className="text-sm text-muted-foreground">
-              Describe your extension idea and AI will generate everything
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {messages.length === 0 ? (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400">
+              {mode === "add-feature"
+                ? "Describe the feature you want to add to your extension"
+                : "Describe your extension idea and AI will generate everything"}
             </p>
-          </TabsContent>
-        </Tabs>
-
-        {/* Suggestions */}
-        <div className="flex flex-wrap gap-2 flex-shrink-0">
-          {suggestions.slice(0, 4).map((suggestion) => (
-            <Badge
-              key={suggestion}
-              variant="outline"
-              className="cursor-pointer hover:bg-primary/10 hover:border-primary/50 transition-all text-xs py-1"
-              onClick={() => setPrompt(suggestion)}
-            >
-              <Zap className="w-3 h-3 mr-1 text-primary" />
-              {suggestion.length > 35 ? suggestion.substring(0, 35) + "..." : suggestion}
-            </Badge>
-          ))}
-        </div>
-
-        <div className="flex-1 min-h-0 rounded-lg border bg-sidebar/50 overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="space-y-4">
-              {messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-center text-muted-foreground">
-                  <Sparkles className="w-10 h-10 mb-3 opacity-30" />
-                  <p className="text-sm">Start a conversation to generate your extension</p>
-                  <p className="text-xs mt-1">Try one of the suggestions above</p>
-                </div>
-              ) : (
-                messages.map((msg, i) => (
-                  <div
-                    key={`${i}-${msg.role}`}
-                    className={cn(
-                      "rounded-lg p-3 transform transition-all duration-300 ease-out",
-                      msg.role === "user" ? "bg-primary/10 border border-primary/20 ml-8" : "bg-secondary/50 mr-8",
-                    )}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      {msg.role === "user" ? (
-                        <Terminal className="w-4 h-4 text-primary" />
-                      ) : (
-                        <Code2 className="w-4 h-4 text-emerald-500" />
-                      )}
-                      <span
-                        className={cn(
-                          "text-xs font-semibold uppercase tracking-wide",
-                          msg.role === "user" ? "text-primary" : "text-emerald-500",
-                        )}
-                      >
-                        {msg.role === "user" ? "You" : "AI"}
-                      </span>
-                    </div>
-
+            <div className="space-y-2">
+              {suggestions.map((suggestion, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPrompt(suggestion)}
+                  className="flex w-full items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-left text-sm text-zinc-300 transition-colors hover:border-violet-500/50 hover:bg-zinc-800"
+                >
+                  <Sparkles className="h-3 w-3 text-violet-400" />
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {messages.map((msg, i) => (
+              <div key={i} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
+                {msg.role === "user" ? (
+                  <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-violet-600 px-4 py-2 text-sm text-white">
+                    <span className="text-xs font-medium text-violet-200">{">"}_ YOU</span>
+                    <p className="mt-1">{msg.content.length > 60 ? `${msg.content.slice(0, 60)}...` : msg.content}</p>
+                  </div>
+                ) : (
+                  <div className="max-w-[95%] space-y-2">
+                    <span className="text-xs font-medium text-violet-400">{"</>"} AI</span>
                     {msg.isGenerating ? (
-                      <div className="space-y-4">
-                        <GenerationProgress stage={generationStage} progress={generationProgress} />
+                      <Card className="border-zinc-800 bg-zinc-900/50 p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800">
+                            {isAutoFixing ? (
+                              <Wrench className="h-5 w-5 animate-pulse text-amber-400" />
+                            ) : isValidating ? (
+                              <RefreshCw className="h-5 w-5 animate-spin text-blue-400" />
+                            ) : (
+                              <Terminal className="h-5 w-5 animate-pulse text-violet-400" />
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-white">
+                              {currentStreamingFile ? `Writing ${currentStreamingFile}...` : generationStage}
+                            </p>
+                            <p className="text-xs text-zinc-400">
+                              {isAutoFixing
+                                ? `Fix attempt ${fixAttempts}/${MAX_FIX_ATTEMPTS}`
+                                : `Generating ${streamingFiles.length} file${streamingFiles.length !== 1 ? "s" : ""}...`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <Progress value={generationProgress} className="mt-3 h-1" />
+
                         {streamingFiles.length > 0 && (
-                          <div className="mt-4">
-                            <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                              <FileCode className="w-3 h-3" />
-                              Generating {streamingFiles.length} files...
-                            </p>
-                            <StreamingFileDisplay
-                              currentFile={currentStreamingFile}
-                              content={currentStreamingContent}
-                              allFiles={streamingFiles}
-                            />
+                          <div className="mt-3 space-y-1">
+                            {streamingFiles.map((file) => (
+                              <motion.div
+                                key={file}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                className={cn(
+                                  "flex items-center gap-2 rounded px-2 py-1 text-xs",
+                                  file === currentStreamingFile ? "bg-violet-500/20 text-violet-300" : "text-zinc-400",
+                                )}
+                              >
+                                {file === currentStreamingFile ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Check className="h-3 w-3 text-green-400" />
+                                )}
+                                <FileCode className="h-3 w-3" />
+                                <span>{file}</span>
+                                {file === currentStreamingFile && (
+                                  <Badge variant="outline" className="ml-auto text-[10px]">
+                                    {currentStreamingContent.length} chars
+                                  </Badge>
+                                )}
+                                {file !== currentStreamingFile && (
+                                  <Badge className="ml-auto bg-green-600 text-[10px]">Done</Badge>
+                                )}
+                              </motion.div>
+                            ))}
                           </div>
                         )}
-                      </div>
-                    ) : msg.role === "user" ? (
-                      <p className="text-sm text-foreground/70 truncate max-w-full">
-                        {prompt.length > 60 ? `${prompt.slice(0, 60)}...` : prompt}
-                      </p>
-                    ) : (
-                      <>
-                        {msg.files && Object.keys(msg.files).length > 0 ? (
-                          <div className="space-y-2">
-                            <p className="text-xs text-emerald-400 flex items-center gap-1">
-                              <Check className="w-3 h-3" />
-                              Generated {Object.keys(msg.files).length} files successfully
-                            </p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {Object.keys(msg.files).map((file) => (
-                                <Badge key={file} variant="secondary" className="text-[10px]">
-                                  {file}
-                                </Badge>
-                              ))}
+                      </Card>
+                    ) : msg.isError ? (
+                      <Card className="border-red-500/30 bg-red-950/20 p-4">
+                        <p className="text-sm text-red-300">{msg.content}</p>
+                      </Card>
+                    ) : msg.files && Object.keys(msg.files).length > 0 ? (
+                      <Card className="border-zinc-800 bg-zinc-900/50 p-4">
+                        <div className="flex items-center gap-2 text-green-400">
+                          <Check className="h-4 w-4" />
+                          <span className="text-sm font-medium">Generated {Object.keys(msg.files).length} files</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {Object.keys(msg.files).map((file) => (
+                            <Badge key={file} variant="outline" className="text-xs">
+                              {file}
+                            </Badge>
+                          ))}
+                        </div>
+
+                        {validationErrors.length > 0 && (
+                          <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-950/20 p-3">
+                            <div className="flex items-center gap-2 text-amber-400">
+                              <AlertTriangle className="h-4 w-4" />
+                              <span className="text-sm font-medium">
+                                {validationErrors.length} syntax error{validationErrors.length !== 1 ? "s" : ""}{" "}
+                                remaining
+                              </span>
                             </div>
+                            <div className="mt-2 max-h-32 overflow-y-auto text-xs text-amber-300/70">
+                              {validationErrors.slice(0, 5).map((err, idx) => (
+                                <div key={idx} className="truncate">
+                                  {err.file}:{err.line} - {err.message}
+                                </div>
+                              ))}
+                              {validationErrors.length > 5 && (
+                                <div className="text-zinc-500">...and {validationErrors.length - 5} more</div>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleManualFix}
+                              disabled={isGenerating}
+                              className="mt-2 border-amber-500/50 text-amber-400 hover:bg-amber-500/10 bg-transparent"
+                            >
+                              <Wrench className="mr-1 h-3 w-3" />
+                              Try Auto-Fix Again
+                            </Button>
                           </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            {msg.content.includes("couldn't parse") || msg.content.includes("error")
-                              ? msg.content
-                              : "Processing complete"}
-                          </p>
                         )}
-                      </>
+                      </Card>
+                    ) : (
+                      <Card className="border-zinc-800 bg-zinc-900/50 p-4">
+                        <p className="text-sm text-zinc-300">Processing complete</p>
+                      </Card>
                     )}
                   </div>
-                ))
-              )}
-              {errorState && !isGenerating && (
-                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-4">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-yellow-200 font-medium">Generation interrupted</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {Object.keys(errorState.partialFiles).length} file(s) were saved:{" "}
-                        {Object.keys(errorState.partialFiles).slice(0, 3).join(", ")}
-                        {Object.keys(errorState.partialFiles).length > 3 &&
-                          ` +${Object.keys(errorState.partialFiles).length - 3} more`}
+                )}
+              </div>
+            ))}
+
+            {/* Error recovery UI */}
+            <AnimatePresence>
+              {errorState && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 flex-shrink-0 text-amber-400" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-amber-300">{errorState.message}</p>
+                      <p className="mt-1 text-xs text-amber-400/70">
+                        Saved {Object.keys(errorState.partialFiles).length} file(s) before the error
                       </p>
-                      <div className="flex gap-2 mt-2">
+                      <div className="mt-3 flex gap-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={handleResume}
-                          className="h-7 text-xs bg-transparent"
+                          onClick={handleContinue}
+                          className="border-amber-500/50 text-amber-400 bg-transparent"
                         >
-                          <Play className="h-3 w-3 mr-1" />
+                          <ChevronRight className="mr-1 h-3 w-3" />
                           Continue
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={handleRetry} className="h-7 text-xs">
-                          <RotateCcw className="h-3 w-3 mr-1" />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleRetry}
+                          className="border-zinc-700 text-zinc-400 bg-transparent"
+                        >
+                          <RefreshCw className="mr-1 h-3 w-3" />
                           Retry
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setErrorState(null)} className="h-7 text-xs">
-                          Dismiss
                         </Button>
                       </div>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               )}
+            </AnimatePresence>
 
-              <div ref={messagesEndRef} />
-            </div>
+            <div ref={messagesEndRef} />
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Input Area */}
-        <div className="space-y-3 flex-shrink-0">
-          <div className="relative">
-            <Textarea
-              placeholder={
-                mode === "generate-scratch"
-                  ? "Describe the extension you want to create in detail..."
-                  : "Describe the feature you want to add..."
-              }
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={3}
-              className="resize-none pr-12 bg-background/50 focus:bg-background transition-colors"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && e.metaKey) {
-                  handleGenerate()
-                }
-              }}
-              disabled={isGenerating}
-            />
-            <div className="absolute bottom-2 right-2 text-[10px] text-muted-foreground">⌘ + Enter</div>
-          </div>
-
-          <div className="flex gap-2">
+      {/* Input */}
+      <div className="border-t border-zinc-800 bg-zinc-900/50 p-4">
+        <div className="relative">
+          <Textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={mode === "add-feature" ? "Describe the feature to add..." : "Describe your extension idea..."}
+            disabled={isGenerating}
+            className="min-h-[50px] resize-none border-zinc-800 bg-zinc-900 pr-12 text-white placeholder:text-zinc-500"
+            rows={1}
+          />
+          <div className="absolute bottom-2 right-2">
             {isGenerating ? (
-              <Button onClick={handleCancel} variant="destructive" className="flex-1 gap-2">
-                <RefreshCw className="w-4 h-4" />
-                Cancel
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={handleStop}
+                className="h-8 w-8 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              >
+                <StopCircle className="h-4 w-4" />
               </Button>
             ) : (
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleGenerate}
-                  disabled={!prompt.trim()}
-                  className="flex-1 gap-2 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
-                >
-                  <Send className="w-4 h-4" />
-                  Generate
-                </Button>
-                {errorState && (
-                  <Button onClick={handleResume} className="flex-1 gap-2">
-                    <RefreshCw className="w-4 h-4" />
-                    Resume
-                  </Button>
-                )}
-                {errorState && (
-                  <Button onClick={handleRetry} className="flex-1 gap-2">
-                    <RefreshCw className="w-4 h-4" />
-                    Retry
-                  </Button>
-                )}
-              </div>
+              <Button
+                size="icon"
+                onClick={handleGenerate}
+                disabled={!prompt.trim()}
+                className="h-8 w-8 bg-violet-600 hover:bg-violet-700 disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
             )}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

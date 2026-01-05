@@ -1,30 +1,37 @@
-import type { ExtensionConfig, Template } from "./types";
+import type { ExtensionConfig, Template } from "./types"
 
 const normalizeSingleLine = (text?: string): string => {
-  if (!text) return "";
-  return text.replace(/\\n/g, "\n").split(/\r?\n/).join(" ").trim();
-};
+  if (!text) return ""
+  return text.replace(/\\n/g, "\n").split(/\r?\n/).join(" ").trim()
+}
 
 const normalizeMultiline = (text?: string): string => {
-  if (!text) return "";
-  return text.replace(/\\n/g, "\n").replace(/\r?\n/g, "\n").trim();
-};
+  if (!text) return ""
+  return text.replace(/\\n/g, "\n").replace(/\r?\n/g, "\n").trim()
+}
 
-export function generatePackageJson(
-  config: ExtensionConfig,
-  template: Template | null
-): string {
-  const pkg = {
-    name: config.name || "my-extension",
+export function generatePackageJson(config: ExtensionConfig, template: Template | null): string {
+  const extName = config.name || "my-extension"
+  const pkg: Record<string, unknown> = {
+    name: extName,
     displayName: config.displayName || "My Extension",
     description: normalizeSingleLine(config.description) || "A VS Code extension",
     version: config.version || "0.0.1",
     publisher: config.publisher || "publisher",
     license: "MIT",
+    repository: {
+      type: "git",
+      url: `https://github.com/${config.publisher || "publisher"}/${extName}.git`,
+    },
+    bugs: {
+      url: `https://github.com/${config.publisher || "publisher"}/${extName}/issues`,
+    },
+    homepage: `https://github.com/${config.publisher || "publisher"}/${extName}#readme`,
     engines: {
-      vscode: "^1.85.0",
+      vscode: "^1.96.0",
     },
     categories: [config.category || "Other"],
+    keywords: [],
     activationEvents: config.activationEvents || [],
     main: "./out/extension.js",
     contributes: config.contributes || {},
@@ -32,26 +39,29 @@ export function generatePackageJson(
       "vscode:prepublish": "npm run compile",
       compile: "tsc -p ./",
       watch: "tsc -watch -p ./",
-      pretest: "npm run compile",
-      lint: "eslint src --ext ts",
+      pretest: "npm run compile && npm run lint",
+      lint: "eslint src",
+      test: "vscode-test",
     },
     devDependencies: {
-      "@types/vscode": "^1.85.0",
-      "@types/node": "^20.x",
-      typescript: "^5.3.0",
-      "@vscode/vsce": "^2.22.0",
+      "@types/vscode": "^1.96.0",
+      "@types/node": "^22.x",
+      "@typescript-eslint/eslint-plugin": "^8.18.0",
+      "@typescript-eslint/parser": "^8.18.0",
+      eslint: "^9.17.0",
+      typescript: "^5.7.0",
+      "@vscode/vsce": "^3.2.0",
+      "@vscode/test-cli": "^0.0.10",
+      "@vscode/test-electron": "^2.4.1",
     },
-  };
+  }
 
-  return JSON.stringify(pkg, null, 2);
+  return JSON.stringify(pkg, null, 2)
 }
 
-export function generateExtensionTs(
-  config: ExtensionConfig,
-  template: Template | null
-): string {
-  const extName = config.name || "myExtension";
-  const displayName = config.displayName || extName;
+export function generateExtensionTs(config: ExtensionConfig, template: Template | null): string {
+  const extName = config.name || "myExtension"
+  const displayName = config.displayName || extName
   return `import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -65,13 +75,13 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
-`;
+`
 }
 
 export function generateTsConfig(): string {
   const config = {
     compilerOptions: {
-      module: "commonjs",
+      module: "Node16",
       target: "ES2022",
       outDir: "out",
       lib: ["ES2022"],
@@ -81,10 +91,11 @@ export function generateTsConfig(): string {
       esModuleInterop: true,
       skipLibCheck: true,
       forceConsistentCasingInFileNames: true,
+      moduleResolution: "Node16",
     },
     exclude: ["node_modules", ".vscode-test"],
-  };
-  return JSON.stringify(config, null, 2);
+  }
+  return JSON.stringify(config, null, 2)
 }
 
 export function generateVsCodeLaunch(): string {
@@ -100,19 +111,19 @@ export function generateVsCodeLaunch(): string {
         preLaunchTask: "npm: watch",
       },
     ],
-  };
-  return JSON.stringify(config, null, 2);
+  }
+  return JSON.stringify(config, null, 2)
 }
 
 export function generateReadme(config: ExtensionConfig): string {
-  const name = config.displayName || config.name || "My Extension";
-  const description = normalizeMultiline(config.description) || "A VS Code extension.";
-  const version = config.version || "0.0.1";
-  const extName = config.name || "my-extension";
+  const name = config.displayName || config.name || "My Extension"
+  const desc = normalizeMultiline(config.description) || "A VS Code extension."
+  const ver = config.version || "0.0.1"
+  const extName = config.name || "my-extension"
 
   return `# ${name}
 
-${description}
+${desc}
 
 ## Features
 
@@ -134,24 +145,24 @@ None yet.
 
 ## Release Notes
 
-### ${version}
+### ${ver}
 
 Initial release.
-`;
+`
 }
 
 export function generateChangeLog(config: ExtensionConfig): string {
-  const name = config.displayName || config.name || "My Extension";
-  const version = config.version || "0.0.1";
+  const name = config.displayName || config.name || "My Extension"
+  const ver = config.version || "0.0.1"
 
   return `# Change Log
 
 All notable changes to the "${name}" extension will be documented in this file.
 
-## [${version}]
+## [${ver}]
 
 - Initial release
-`;
+`
 }
 
 export function generateGitIgnore(): string {
@@ -160,7 +171,7 @@ node_modules/
 .vscode-test/
 *.vsix
 .DS_Store
-`;
+`
 }
 
 export function generateVsCodeIgnore(): string {
@@ -174,13 +185,13 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 node_modules/**
-`;
+`
 }
 
 export function generateLicense(config: ExtensionConfig): string {
   const year = new Date().getFullYear()
   const holder = config.publisher || "Publisher Name"
-  
+
   return `MIT License
 
 Copyright (c) ${year} ${holder}
@@ -201,6 +212,5 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-`
+SOFTWARE.`
 }

@@ -3,14 +3,17 @@ import type { ExtensionConfig, Template } from "@/lib/types"
 import { makefile } from "@/lib/templates"
 
 export async function POST(req: Request) {
-  const { prompt, config, template, mode, existingFiles, recoveredFiles } = (await req.json()) as {
-    prompt: string
-    config: ExtensionConfig
-    template: Template | null
-    mode: "add-feature" | "generate-scratch" | "modify"
-    existingFiles?: Record<string, string>
-    recoveredFiles?: Record<string, string>
-  }
+  const { prompt, config, template, mode, existingFiles, recoveredFiles, validationErrors, isFixAttempt } =
+    (await req.json()) as {
+      prompt: string
+      config: ExtensionConfig
+      template: Template | null
+      mode: "add-feature" | "generate-scratch" | "modify"
+      existingFiles?: Record<string, string>
+      recoveredFiles?: Record<string, string>
+      validationErrors?: Array<{ file: string; line: number; column: number; message: string }>
+      isFixAttempt?: boolean
+    }
 
   const recoveryContext =
     recoveredFiles && Object.keys(recoveredFiles).length > 0
@@ -27,7 +30,61 @@ Focus on completing any missing files that would be needed for a complete extens
 `
       : ""
 
-  const systemPrompt = `You are a world-class VS Code extension developer with expertise in TypeScript, the VS Code Extension API, and software architecture. You create production-ready, well-documented, and thoroughly tested VS Code extensions.
+  const validationContext =
+    validationErrors && validationErrors.length > 0
+      ? `
+=== SYNTAX ERRORS TO FIX ===
+The following syntax errors were detected in the generated code. You MUST fix ALL of them:
+
+${validationErrors.map((err) => `❌ ${err.file}:${err.line}:${err.column} - ${err.message}`).join("\n")}
+
+INSTRUCTIONS FOR FIXING:
+1. Analyze each error carefully
+2. Output ONLY the files that need to be fixed (not all files)
+3. Ensure the fixed code has:
+   - Balanced braces, brackets, and parentheses
+   - Proper string escaping
+   - Valid TypeScript/JSON syntax
+   - No missing semicolons or commas
+4. Double-check your fix before outputting
+
+Think step by step:
+1. What is the root cause of each error?
+2. What specific change fixes it?
+3. Are there any related issues in nearby code?
+`
+      : ""
+
+  const fixAttemptPrompt = `You are a TypeScript syntax expert. Your task is to fix syntax errors in VS Code extension code.
+
+${validationContext}
+
+=== EXISTING FILES WITH ERRORS ===
+${Object.entries(existingFiles || {})
+  .filter(([path]) => validationErrors?.some((e) => e.file === path))
+  .map(([path, content]) => `📄 ${path}:\n\`\`\`\n${content}\n\`\`\``)
+  .join("\n\n")}
+
+=== OUTPUT FORMAT ===
+Respond with ONLY a valid JSON object containing the fixed files:
+{
+  "message": "Fixed X syntax errors in Y files",
+  "files": {
+    "path/to/fixed-file.ts": "...corrected content with proper escaping..."
+  },
+  "commands": [],
+  "activationEvents": []
+}
+
+ESCAPING RULES:
+- Newlines: \\n
+- Tabs: \\t  
+- Quotes inside strings: \\"
+- Backslashes: \\\\
+
+Output ONLY the files that needed fixes, not the entire project.`
+
+  const mainPrompt = `You are a world-class VS Code extension developer with expertise in TypeScript, the VS Code Extension API, and software architecture. You create production-ready, well-documented, and thoroughly tested VS Code extensions.
 
 === CURRENT PROJECT CONTEXT ===
 Extension Name: "${config.displayName || config.name || "My Extension"}"
@@ -39,6 +96,7 @@ Description: "${config.description || ""}"
 Base Template: ${template?.name || "Custom/Blank"}
 Mode: ${mode}
 ${recoveryContext}
+${validationContext}
 ${
   existingFiles && Object.keys(existingFiles).length > 0
     ? `=== EXISTING PROJECT FILES ===
@@ -117,6 +175,14 @@ ${
 11. Organize code into logical modules (services, utils, commands, etc.)
 12. Use constants for repeated strings (command IDs, config keys, etc.)
 
+=== SYNTAX VALIDATION ===
+CRITICAL: Your code will be validated for syntax errors. Ensure:
+- All braces {}, brackets [], and parentheses () are balanced
+- All strings are properly terminated
+- No trailing commas in JSON
+- Proper TypeScript syntax throughout
+- Valid JSON in package.json and other .json files
+
 === COMMAND NAMING CONVENTION ===
 All commands MUST use this pattern: ${config.name || "myext"}.commandName
 Example: ${config.name || "myext"}.helloWorld, ${config.name || "myext"}.runTask
@@ -125,18 +191,25 @@ Example: ${config.name || "myext"}.helloWorld, ${config.name || "myext"}.runTask
 Ensure package.json includes:
 - name, displayName, description, version, publisher
 - license: "MIT" (REQUIRED for OpenVSX registry - do NOT omit this)
-- engines: { "vscode": "^1.85.0" }
+- repository: { "type": "git", "url": "https://github.com/PUBLISHER/EXT_NAME.git" }
+- bugs: { "url": "https://github.com/PUBLISHER/EXT_NAME/issues" }
+- homepage: "https://github.com/PUBLISHER/EXT_NAME#readme"
+- engines: { "vscode": "^1.96.0" }
 - categories, keywords (for marketplace discoverability)
 - main: "./out/extension.js"
 - activationEvents (use "*" sparingly, prefer specific events)
 - contributes: commands, configuration, menus, keybindings as needed
-- scripts: compile, watch, package, lint
-- devDependencies: @types/vscode, @types/node, typescript, @vscode/vsce
-
-IMPORTANT: OpenVSX registry REQUIRES:
-1. "license" field in package.json (typically "MIT")
-2. LICENSE file with full license text
-Extensions without these will be REJECTED by OpenVSX.
+- scripts: compile, watch, package, lint, test
+- devDependencies with LATEST versions:
+  - "@types/vscode": "^1.96.0"
+  - "@types/node": "^22.x"
+  - "@typescript-eslint/eslint-plugin": "^8.18.0"
+  - "@typescript-eslint/parser": "^8.18.0"
+  - "eslint": "^9.17.0"
+  - "typescript": "^5.7.0"
+  - "@vscode/vsce": "^3.2.0"
+  - "@vscode/test-cli": "^0.0.10"
+  - "@vscode/test-electron": "^2.4.1"
 
 === CRITICAL: OUTPUT FORMAT ===
 Your response MUST be a valid JSON object that can be parsed with JSON.parse().
@@ -149,7 +222,7 @@ RULES:
 5. All string values MUST have special characters escaped:
    - Newlines: \\n
    - Tabs: \\t  
-   - Quotes: \\\"
+   - Quotes: \\"
    - Backslashes: \\\\
    - Carriage returns: \\r
 
@@ -165,20 +238,19 @@ REQUIRED JSON STRUCTURE:
   "activationEvents": ["onCommand:ext.cmd"]
 }
 
-EXAMPLE of properly escaped file content:
-"src/extension.ts": "import * as vscode from 'vscode';\\n\\n/**\\n * Activates the extension\\n */\\nexport function activate(context: vscode.ExtensionContext) {\\n\\tconst disposable = vscode.commands.registerCommand('myext.hello', () => {\\n\\t\\tvscode.window.showInformationMessage('Hello!');\\n\\t});\\n\\tcontext.subscriptions.push(disposable);\\n}"
-
 Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse() would succeed on your output.`
+
+  const systemPrompt = isFixAttempt ? fixAttemptPrompt : mainPrompt
 
   try {
     const result = streamText({
       model: "anthropic/claude-sonnet-4-20250514",
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: prompt },
+        { role: "user", content: isFixAttempt ? "Fix the syntax errors listed above." : prompt },
       ],
       maxTokens: 16000,
-      temperature: 0.7,
+      temperature: isFixAttempt ? 0.3 : 0.7,
     })
 
     return result.toTextStreamResponse()
