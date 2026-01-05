@@ -13,8 +13,8 @@ import {
   Sparkles,
   ChevronRight,
   File,
-  Trash2,
   User,
+  Settings,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -24,6 +24,7 @@ import type { Template } from "@/lib/types"
 import { scratchTemplate } from "@/lib/templates"
 import { getAllUserExtensions, deleteUserExtension, type UserExtension } from "@/lib/storage"
 import { motion, AnimatePresence } from "framer-motion"
+import { ExtensionManagerModal } from "./extension-manager-modal"
 
 const iconMap: Record<string, React.ReactNode> = {
   command: <Command className="w-5 h-5" />,
@@ -44,11 +45,12 @@ interface TemplateSelectorProps {
 
 function userExtensionToTemplate(
   ext: UserExtension,
-): Template & { isUserExtension: true; userExtensionId: string; logoDataUrl?: string } {
+): Template & { isUserExtension: true; userExtensionId: string; logoDataUrl?: string; userExtension: UserExtension } {
   return {
     id: `user-ext-${ext.id}`,
     userExtensionId: ext.id,
     isUserExtension: true,
+    userExtension: ext,
     name: ext.displayName || ext.name,
     description: ext.description || "My saved extension",
     icon: "user",
@@ -62,6 +64,7 @@ function userExtensionToTemplate(
 export function TemplateSelector({ templates, selectedTemplate, onSelect }: TemplateSelectorProps) {
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null)
   const [userExtensions, setUserExtensions] = useState<UserExtension[]>([])
+  const [managingExtension, setManagingExtension] = useState<UserExtension | null>(null)
 
   useEffect(() => {
     getAllUserExtensions().then(setUserExtensions)
@@ -74,10 +77,14 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
     setExpandedTemplate(expandedTemplate === templateId ? null : templateId)
   }
 
-  const handleDeleteUserExtension = async (e: React.MouseEvent, extId: string) => {
-    e.stopPropagation()
+  const handleDeleteUserExtension = async (extId: string) => {
     await deleteUserExtension(extId)
     setUserExtensions((prev) => prev.filter((ext) => ext.id !== extId))
+  }
+
+  const handleManageExtension = (e: React.MouseEvent, ext: UserExtension) => {
+    e.stopPropagation()
+    setManagingExtension(ext)
   }
 
   const getFileIcon = (filename: string) => {
@@ -97,7 +104,12 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
   }
 
   const renderTemplateCard = (
-    template: Template & { isUserExtension?: boolean; userExtensionId?: string; logoDataUrl?: string },
+    template: Template & {
+      isUserExtension?: boolean
+      userExtensionId?: string
+      logoDataUrl?: string
+      userExtension?: UserExtension
+    },
     isScratch = false,
   ) => {
     const isSelected = selectedTemplate?.id === template.id
@@ -150,15 +162,16 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
                   <CardDescription className="text-xs mt-0.5 line-clamp-1">{template.description}</CardDescription>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {isUserExt && template.userExtensionId && (
+              <div className="flex items-center gap-1">
+                {isUserExt && template.userExtension && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={(e) => handleDeleteUserExtension(e, template.userExtensionId!)}
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    onClick={(e) => handleManageExtension(e, template.userExtension!)}
+                    title="Manage extension"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Settings className="w-3.5 h-3.5" />
                   </Button>
                 )}
                 {isSelected && (
@@ -287,6 +300,17 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
           {allTemplates.map((template) => renderTemplateCard(template, template.id === "scratch"))}
         </div>
       </ScrollArea>
+
+      <ExtensionManagerModal
+        isOpen={!!managingExtension}
+        onClose={() => setManagingExtension(null)}
+        extension={managingExtension}
+        onDelete={() => {
+          if (managingExtension) {
+            handleDeleteUserExtension(managingExtension.id)
+          }
+        }}
+      />
     </div>
   )
 }
