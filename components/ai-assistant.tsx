@@ -876,6 +876,7 @@ export function AiAssistant({
             "cursor-pointer transition-colors",
             mode === "add-feature" ? "bg-violet-600 hover:bg-violet-700" : "hover:bg-zinc-800",
           )}
+          onClick={() => setMode("add-feature")}
         >
           + Add Feature
         </Badge>
@@ -885,6 +886,7 @@ export function AiAssistant({
             "cursor-pointer transition-colors",
             mode === "generate-scratch" ? "bg-violet-600 hover:bg-violet-700" : "hover:bg-zinc-800",
           )}
+          onClick={() => setMode("generate-scratch")}
         >
           <Sparkles className="mr-1 h-3 w-3" />
           From Scratch
