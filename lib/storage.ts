@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
   TEMPLATE_CONFIG: "vscode-ext-builder:template-config:",
   TEMPLATE_ICON: "vscode-ext-builder:template-icon:",
   ACTIVE_PROJECT_ID: "vscode-ext-builder:active-project-id",
+  USER_ID: "vscode-ext-builder:user-id",
 }
 
 export interface StoredCredentials {
@@ -257,66 +258,82 @@ export function setActiveProjectId(id: string | null): void {
   }
 }
 
-// User extension storage functions
+// Generate or get user ID for DynamoDB partitioning
+export function getUserId(): string {
+  if (typeof window === "undefined") return ""
+
+  let userId = localStorage.getItem(STORAGE_KEYS.USER_ID)
+  if (!userId) {
+    userId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+    localStorage.setItem(STORAGE_KEYS.USER_ID, userId)
+  }
+  return userId
+}
+
+// DynamoDB-backed user extension functions
 export async function getAllUserExtensions(): Promise<UserExtension[]> {
   try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(USER_EXTENSIONS_STORE, "readonly")
-      const store = tx.objectStore(USER_EXTENSIONS_STORE)
-      const request = store.index("updatedAt").getAll()
-      request.onsuccess = () => {
-        const extensions = request.result as UserExtension[]
-        resolve(extensions.sort((a, b) => b.updatedAt - a.updatedAt))
-      }
-      request.onerror = () => reject(request.error)
-    })
-  } catch {
+    const userId = getUserId()
+    if (!userId) return []
+
+    const res = await fetch(`/api/extensions?userId=${encodeURIComponent(userId)}`)
+    if (!res.ok) {
+      console.error("Failed to fetch extensions:", await res.text())
+      return []
+    }
+    return await res.json()
+  } catch (error) {
+    console.error("Error fetching extensions:", error)
     return []
   }
 }
 
 export async function saveUserExtension(extension: UserExtension): Promise<void> {
   try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(USER_EXTENSIONS_STORE, "readwrite")
-      const store = tx.objectStore(USER_EXTENSIONS_STORE)
-      const request = store.put({ ...extension, updatedAt: Date.now() })
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
+    const userId = getUserId()
+    if (!userId) return
+
+    const res = await fetch("/api/extensions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...extension, userId, updatedAt: Date.now() }),
     })
-  } catch {
-    // Ignore storage errors
+
+    if (!res.ok) {
+      console.error("Failed to save extension:", await res.text())
+    }
+  } catch (error) {
+    console.error("Error saving extension:", error)
   }
 }
 
 export async function deleteUserExtension(id: string): Promise<void> {
   try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(USER_EXTENSIONS_STORE, "readwrite")
-      const store = tx.objectStore(USER_EXTENSIONS_STORE)
-      const request = store.delete(id)
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
+    const userId = getUserId()
+    if (!userId) return
+
+    const res = await fetch(`/api/extensions/${id}?userId=${encodeURIComponent(userId)}`, {
+      method: "DELETE",
     })
-  } catch {
-    // Ignore storage errors
+
+    if (!res.ok) {
+      console.error("Failed to delete extension:", await res.text())
+    }
+  } catch (error) {
+    console.error("Error deleting extension:", error)
   }
 }
 
 export async function getUserExtension(id: string): Promise<UserExtension | null> {
   try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(USER_EXTENSIONS_STORE, "readonly")
-      const store = tx.objectStore(USER_EXTENSIONS_STORE)
-      const request = store.get(id)
-      request.onsuccess = () => resolve(request.result || null)
-      request.onerror = () => reject(request.error)
-    })
-  } catch {
+    const userId = getUserId()
+    if (!userId) return null
+
+    const res = await fetch(`/api/extensions/${id}?userId=${encodeURIComponent(userId)}`)
+    if (!res.ok) return null
+    return await res.json()
+  } catch (error) {
+    console.error("Error fetching extension:", error)
     return null
   }
 }

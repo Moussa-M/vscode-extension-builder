@@ -43,6 +43,7 @@ interface PublishState {
   githubToken: string
   azureToken: string
   openVsxToken: string
+  repoOwner: string
   repoName: string
   isPrivate: boolean
   publisherName: string
@@ -57,6 +58,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
     githubToken: "",
     azureToken: "",
     openVsxToken: "",
+    repoOwner: "",
     repoName: "",
     isPrivate: false,
     publisherName: "",
@@ -75,6 +77,19 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
 
   useEffect(() => {
     const stored = getStoredCredentials()
+
+    // Try to extract owner from package.json repository URL
+    let ownerFromConfig = ""
+    if (files["package.json"]) {
+      try {
+        const pkg = JSON.parse(files["package.json"])
+        if (pkg.repository?.url) {
+          const match = pkg.repository.url.match(/github\.com\/([^/]+)\//)
+          if (match) ownerFromConfig = match[1]
+        }
+      } catch {}
+    }
+
     setState((prev) => ({
       ...prev,
       githubToken: stored.githubToken || prev.githubToken,
@@ -82,8 +97,37 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
       openVsxToken: stored.openVsxToken || prev.openVsxToken,
       publisherName: stored.publisherName || config.publisher || prev.publisherName,
       repoName: config.name || prev.repoName || "my-extension",
+      // Use owner from config, or stored publisher, or leave empty to fetch from GitHub
+      repoOwner: ownerFromConfig || stored.publisherName || prev.repoOwner,
     }))
-  }, [open, config.name, config.publisher])
+
+    // Fetch GitHub username if we have a token and no owner yet
+    const fetchGitHubUser = async () => {
+      const token = stored.githubToken
+      if (!token) return
+
+      try {
+        const res = await fetch("https://api.github.com/user", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github.v3+json",
+          },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setState((prev) => ({
+            ...prev,
+            // Only set if no owner was already set from config
+            repoOwner: prev.repoOwner || data.login,
+          }))
+        }
+      } catch {}
+    }
+
+    if (open) {
+      fetchGitHubUser()
+    }
+  }, [open, config.name, config.publisher, files])
 
   const updateState = useCallback((updates: Partial<PublishState>) => {
     setState((prev) => {
@@ -137,6 +181,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
         body: JSON.stringify({
           token: state.githubToken,
           repoName: state.repoName,
+          org: state.repoOwner || undefined,
           description: config.description || `${config.displayName} - VS Code Extension`,
           isPrivate: state.isPrivate,
         }),
@@ -168,7 +213,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
     } finally {
       setLoading(null)
     }
-  }, [state.githubToken, state.repoName, state.isPrivate, config])
+  }, [state.githubToken, state.repoName, state.repoOwner, state.isPrivate, config])
 
   // Push files to GitHub
   const filesWithLogo = useMemo(() => {
@@ -645,13 +690,25 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
     <div className="space-y-6">
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label className="text-zinc-300">Repository Name</Label>
-          <Input
-            value={state.repoName}
-            onChange={(e) => updateState({ repoName: e.target.value })}
-            placeholder="my-vscode-extension"
-            className="bg-zinc-900 border-zinc-700 text-zinc-100"
-          />
+          <Label className="text-zinc-300">Repository Path</Label>
+          <div className="flex gap-2 items-center">
+            <Input
+              value={state.repoOwner}
+              onChange={(e) => updateState({ repoOwner: e.target.value })}
+              placeholder="owner"
+              className="bg-zinc-900 border-zinc-700 text-zinc-100 w-1/3"
+            />
+            <span className="text-zinc-500">/</span>
+            <Input
+              value={state.repoName}
+              onChange={(e) => updateState({ repoName: e.target.value })}
+              placeholder="repository-name"
+              className="bg-zinc-900 border-zinc-700 text-zinc-100 flex-1"
+            />
+          </div>
+          <p className="text-xs text-zinc-500">
+            Use your username for personal repos, or org name for organization repos
+          </p>
         </div>
 
         <div className="flex items-center justify-between">
@@ -671,7 +728,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
 
       <Button
         onClick={createGitHubRepo}
-        disabled={!state.repoName || loading !== null}
+        disabled={!state.repoName || !state.repoOwner || loading !== null}
         className="w-full bg-violet-600 hover:bg-violet-700"
       >
         {loading === "creating-repo" || loading === "pushing" ? (

@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   Check,
   Command,
@@ -15,6 +15,8 @@ import {
   File,
   User,
   Settings,
+  Upload,
+  Loader2,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -22,9 +24,10 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import type { Template } from "@/lib/types"
 import { scratchTemplate } from "@/lib/templates"
-import { getAllUserExtensions, deleteUserExtension, type UserExtension } from "@/lib/storage"
+import { getAllUserExtensions, deleteUserExtension, saveUserExtension, type UserExtension } from "@/lib/storage"
 import { motion, AnimatePresence } from "framer-motion"
 import { ExtensionManagerModal } from "./extension-manager-modal"
+import JSZip from "jszip"
 
 const iconMap: Record<string, React.ReactNode> = {
   command: <Command className="w-5 h-5" />,
@@ -65,12 +68,132 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null)
   const [userExtensions, setUserExtensions] = useState<UserExtension[]>([])
   const [managingExtension, setManagingExtension] = useState<UserExtension | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getAllUserExtensions().then(setUserExtensions)
   }, [])
 
-  const userTemplates = userExtensions.map(userExtensionToTemplate)
+  const handleImportZip = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setIsImporting(true)
+    setImportError(null)
+
+    try {
+      const zip = await JSZip.loadAsync(file)
+
+      // Find package.json (might be in root or in a folder)
+      let packageJsonContent: string | null = null
+      let rootPath = ""
+
+      for (const [path, zipEntry] of Object.entries(zip.files)) {
+        if (path.endsWith("package.json") && !zipEntry.dir) {
+          const content = await zipEntry.async("string")
+          try {
+            JSON.parse(content) // Validate it's valid JSON
+            packageJsonContent = content
+            // Get root path (e.g., "my-extension/" or "")
+            rootPath = path.replace("package.json", "")
+            break
+          } catch {
+            continue
+          }
+        }
+      }
+
+      if (!packageJsonContent) {
+        throw new Error("No valid package.json found in ZIP")
+      }
+
+      const packageJson = JSON.parse(packageJsonContent)
+
+      // Extract all text files
+      const boilerplate: Record<string, string> = {}
+      let logoDataUrl: string | undefined
+
+      for (const [path, zipEntry] of Object.entries(zip.files)) {
+        if (zipEntry.dir) continue
+
+        // Remove root path prefix
+        const relativePath = rootPath ? path.replace(rootPath, "") : path
+        if (!relativePath) continue
+
+        // Skip node_modules and other unnecessary files
+        if (
+          relativePath.startsWith("node_modules/") ||
+          relativePath.startsWith(".git/") ||
+          relativePath.endsWith(".vsix") ||
+          relativePath === ".DS_Store"
+        ) {
+          continue
+        }
+
+        // Check if it's an image (for icon)
+        if (relativePath.match(/\.(png|jpg|jpeg|gif|svg)$/i)) {
+          // Check if this is the icon referenced in package.json
+          if (packageJson.icon && relativePath.includes(packageJson.icon.replace("./", ""))) {
+            const blob = await zipEntry.async("blob")
+            logoDataUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(reader.result as string)
+              reader.readAsDataURL(blob)
+            })
+          }
+          continue
+        }
+
+        // Read text files
+        try {
+          const content = await zipEntry.async("string")
+          boilerplate[relativePath] = content
+        } catch {
+          // Skip binary files
+        }
+      }
+
+      // Create user extension from imported data
+      const newExtension: UserExtension = {
+        id: `imported_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        name: packageJson.name || file.name.replace(".zip", ""),
+        displayName: packageJson.displayName || packageJson.name || "Imported Extension",
+        description: packageJson.description || "Imported from ZIP",
+        tags: ["imported"],
+        boilerplate,
+        config: {
+          name: packageJson.name || "",
+          displayName: packageJson.displayName || "",
+          description: packageJson.description || "",
+          publisher: packageJson.publisher || "",
+          version: packageJson.version || "0.0.1",
+          category: packageJson.categories?.[0] || "Other",
+          activationEvents: packageJson.activationEvents || [],
+          contributes: packageJson.contributes || {},
+        },
+        logoDataUrl,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+
+      await saveUserExtension(newExtension)
+      setUserExtensions((prev) => [newExtension, ...prev])
+
+      // Select the imported extension
+      onSelect(userExtensionToTemplate(newExtension))
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Failed to import ZIP")
+    } finally {
+      setIsImporting(false)
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
+    }
+  }
+
   const allTemplates = [scratchTemplate, ...templates.filter((t) => t.id !== "scratch")]
 
   const toggleExpand = (templateId: string) => {
@@ -278,22 +401,62 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
 
       <ScrollArea className="h-[calc(100vh-20rem)]">
         <div className="space-y-3 pr-4">
-          {userTemplates.length > 0 && (
-            <>
-              <div className="flex items-center gap-2 pt-2">
-                <User className="w-4 h-4 text-violet-400" />
-                <span className="text-sm font-medium text-violet-400">My Extensions</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-violet-400" />
+              <span className="text-sm font-medium text-violet-400">My Extensions</span>
+              {userExtensions.length > 0 && (
                 <Badge variant="secondary" className="text-xs bg-violet-500/10 text-violet-400">
-                  {userTemplates.length}
+                  {userExtensions.length}
                 </Badge>
-              </div>
-              {userTemplates.map((template) => renderTemplateCard(template))}
+              )}
+            </div>
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".zip"
+                onChange={handleImportZip}
+                className="hidden"
+                id="zip-import"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5 bg-transparent"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isImporting}
+              >
+                {isImporting ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-3 h-3" />
+                    Import ZIP
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {importError && <div className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-md">{importError}</div>}
+
+          {userExtensions.length > 0 ? (
+            <>
+              {userExtensions.map((ext) => renderTemplateCard(userExtensionToTemplate(ext)))}
               <div className="border-t border-border my-4" />
             </>
+          ) : (
+            <div className="text-xs text-muted-foreground py-4 text-center border border-dashed border-border rounded-lg">
+              No saved extensions yet. Create one or import from ZIP.
+            </div>
           )}
 
           {/* Starter templates section */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pt-2">
             <Sparkles className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm font-medium text-muted-foreground">Starter Templates</span>
           </div>

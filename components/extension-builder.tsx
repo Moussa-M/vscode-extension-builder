@@ -145,22 +145,23 @@ export function ExtensionBuilder() {
   }, [])
 
   const handleTemplateSelect = (
-    template: Template & { isUserExtension?: boolean; userExtensionId?: string; logoDataUrl?: string },
+    template: Template & {
+      isUserExtension?: boolean
+      userExtensionId?: string
+      logoDataUrl?: string
+      userExtension?: UserExtension
+    },
   ) => {
     setSelectedTemplate(template)
     const stored = getStoredCredentials()
 
-    // Handle user extension selection
-    if (template.isUserExtension && template.userExtensionId) {
-      getUserExtension(template.userExtensionId).then((ext) => {
-        if (ext) {
-          setCurrentExtensionId(ext.id)
-          setConfig(ext.config)
-          setGeneratedCode(ext.boilerplate)
-          setLogoDataUrl(ext.logoDataUrl)
-          setActiveTab("config")
-        }
-      })
+    if (template.isUserExtension && template.userExtension) {
+      const ext = template.userExtension
+      setCurrentExtensionId(ext.id)
+      setConfig(ext.config)
+      setGeneratedCode(ext.boilerplate)
+      setLogoDataUrl(ext.logoDataUrl)
+      setActiveTab("config")
       return
     }
 
