@@ -67,13 +67,41 @@ function userExtensionToTemplate(
 export function TemplateSelector({ templates, selectedTemplate, onSelect }: TemplateSelectorProps) {
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null)
   const [userExtensions, setUserExtensions] = useState<UserExtension[]>([])
+  const [isLoadingExtensions, setIsLoadingExtensions] = useState(true)
   const [managingExtension, setManagingExtension] = useState<UserExtension | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    getAllUserExtensions().then(setUserExtensions)
+    let mounted = true
+    let retryCount = 0
+    const maxRetries = 3
+
+    const loadExtensions = async () => {
+      try {
+        const extensions = await getAllUserExtensions()
+        if (mounted) {
+          setUserExtensions(extensions)
+          setIsLoadingExtensions(false)
+        }
+      } catch (error) {
+        console.error("Failed to load extensions:", error)
+        // Retry if fingerprint might not be ready yet
+        if (retryCount < maxRetries && mounted) {
+          retryCount++
+          setTimeout(loadExtensions, 1000)
+        } else if (mounted) {
+          setIsLoadingExtensions(false)
+        }
+      }
+    }
+
+    loadExtensions()
+
+    return () => {
+      mounted = false
+    }
   }, [])
 
   const handleImportZip = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -444,7 +472,12 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
 
           {importError && <div className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-md">{importError}</div>}
 
-          {userExtensions.length > 0 ? (
+          {isLoadingExtensions ? (
+            <div className="text-xs text-muted-foreground py-4 text-center border border-dashed border-border rounded-lg flex items-center justify-center gap-2">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Loading your extensions...
+            </div>
+          ) : userExtensions.length > 0 ? (
             <>
               {userExtensions.map((ext) => renderTemplateCard(userExtensionToTemplate(ext)))}
               <div className="border-t border-border my-4" />

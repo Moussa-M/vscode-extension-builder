@@ -161,17 +161,37 @@ export async function POST(req: NextRequest) {
             },
           )
         } else {
-          // Create new extension - POST to publishers endpoint with VSIX
-          console.log("[apertacodex] Creating new extension...")
+          console.log("[apertacodex] Creating new extension with multipart form...")
+
+          // Create multipart boundary
+          const boundary = `----VSIXBoundary${Date.now()}`
+
+          // Build multipart form data manually
+          const formDataParts: Buffer[] = []
+
+          // Add the VSIX file part
+          formDataParts.push(
+            Buffer.from(
+              `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="file"; filename="${vsixFilename}"\r\n` +
+                `Content-Type: application/vsix\r\n\r\n`,
+            ),
+          )
+          formDataParts.push(vsixBuffer)
+          formDataParts.push(Buffer.from(`\r\n--${boundary}--\r\n`))
+
+          const formBody = Buffer.concat(formDataParts)
+
           publishRes = await fetch(
             `https://marketplace.visualstudio.com/_apis/gallery/publishers/${publisher}/extensions?api-version=7.1-preview.1`,
             {
               method: "POST",
               headers: {
                 Authorization: `Basic ${Buffer.from(`:${azureToken}`).toString("base64")}`,
-                "Content-Type": "application/octet-stream",
+                "Content-Type": `multipart/form-data; boundary=${boundary}`,
+                "Content-Length": formBody.length.toString(),
               },
-              body: vsixBuffer,
+              body: formBody,
             },
           )
         }
