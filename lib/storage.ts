@@ -158,6 +158,7 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 import type { ExtensionProject, UserExtension } from "./types"
+import { getVisitorId, getCachedVisitorId, initializeVisitorId } from "./fingerprint"
 
 export async function getAllProjects(): Promise<ExtensionProject[]> {
   try {
@@ -259,21 +260,26 @@ export function setActiveProjectId(id: string | null): void {
 }
 
 // Generate or get user ID for DynamoDB partitioning
-export function getUserId(): string {
+export async function getUserId(): Promise<string> {
   if (typeof window === "undefined") return ""
+  return await getVisitorId()
+}
 
-  let userId = localStorage.getItem(STORAGE_KEYS.USER_ID)
-  if (!userId) {
-    userId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-    localStorage.setItem(STORAGE_KEYS.USER_ID, userId)
-  }
-  return userId
+// Synchronous version for when we know the ID is already cached
+export function getUserIdSync(): string {
+  if (typeof window === "undefined") return ""
+  return getCachedVisitorId() || ""
+}
+
+// Initialize fingerprint on app load
+export async function initializeUser(): Promise<string> {
+  return await initializeVisitorId()
 }
 
 // DynamoDB-backed user extension functions
 export async function getAllUserExtensions(): Promise<UserExtension[]> {
   try {
-    const userId = getUserId()
+    const userId = await getUserId()
     if (!userId) return []
 
     const res = await fetch(`/api/extensions?userId=${encodeURIComponent(userId)}`)
@@ -290,7 +296,7 @@ export async function getAllUserExtensions(): Promise<UserExtension[]> {
 
 export async function saveUserExtension(extension: UserExtension): Promise<void> {
   try {
-    const userId = getUserId()
+    const userId = await getUserId()
     if (!userId) return
 
     const res = await fetch("/api/extensions", {
@@ -309,7 +315,7 @@ export async function saveUserExtension(extension: UserExtension): Promise<void>
 
 export async function deleteUserExtension(id: string): Promise<void> {
   try {
-    const userId = getUserId()
+    const userId = await getUserId()
     if (!userId) return
 
     const res = await fetch(`/api/extensions/${id}?userId=${encodeURIComponent(userId)}`, {
@@ -326,7 +332,7 @@ export async function deleteUserExtension(id: string): Promise<void> {
 
 export async function getUserExtension(id: string): Promise<UserExtension | null> {
   try {
-    const userId = getUserId()
+    const userId = await getUserId()
     if (!userId) return null
 
     const res = await fetch(`/api/extensions/${id}?userId=${encodeURIComponent(userId)}`)

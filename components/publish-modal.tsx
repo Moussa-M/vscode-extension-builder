@@ -323,9 +323,30 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
         throw new Error(data.error || "Failed to create extension package")
       }
 
+      // Handle published: true - success!
+      if (data.published) {
+        setState((prev) => ({
+          ...prev,
+          publishedUrl:
+            data.url || `https://marketplace.visualstudio.com/items?itemName=${state.publisherName}.${config.name}`,
+          step: "done",
+        }))
+        return
+      }
+
+      // Handle published: false - VSIX created but not auto-published
       if (data.vsixBase64) {
         setFallbackVsix(data.vsixBase64)
-        setErrorSuggestion(data.suggestion || "Download the VSIX and upload it manually to the VS Marketplace")
+      }
+      if (data.error) {
+        setError(data.error)
+      }
+      if (data.suggestion) {
+        setErrorSuggestion(data.suggestion)
+      } else if (!state.azureToken) {
+        setErrorSuggestion(
+          "Add an Azure PAT in Setup to enable auto-publishing, or download the VSIX and upload manually.",
+        )
       }
 
       setState((prev) => ({
@@ -350,6 +371,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
     setLoading("publishing-openvsx")
     setError(null)
     setErrorSuggestion(null)
+    setFallbackVsix(null)
 
     try {
       // Save extension before publishing
@@ -374,22 +396,41 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
         if (data.suggestion) {
           setErrorSuggestion(data.suggestion)
         }
-        throw new Error(data.error || "Failed to publish to Open VSX")
-      }
-
-      // Handle partial success (VSIX created but not published)
-      if (data.success && !data.published) {
-        if (data.suggestion) {
-          setErrorSuggestion(data.suggestion)
-        }
         if (data.vsixBase64) {
           setFallbackVsix(data.vsixBase64)
         }
+        throw new Error(data.error || "Failed to publish to Open VSX")
+      }
+
+      // Handle published: true - success!
+      if (data.published) {
+        setState((prev) => ({
+          ...prev,
+          openVsxPublishedUrl: data.url || `https://open-vsx.org/extension/${state.publisherName}/${config.name}`,
+          step: "done",
+        }))
+        return
+      }
+
+      // Handle published: false - VSIX created but not auto-published
+      if (data.vsixBase64) {
+        setFallbackVsix(data.vsixBase64)
+      }
+      if (data.error) {
+        setError(data.error)
+      }
+      if (data.suggestion) {
+        setErrorSuggestion(data.suggestion)
+      } else if (!state.openVsxToken) {
+        setErrorSuggestion(
+          "Add an Open VSX token in Setup to enable auto-publishing, or download the VSIX and upload manually.",
+        )
       }
 
       setState((prev) => ({
         ...prev,
-        openVsxPublishedUrl: data.url || `https://open-vsx.org/extension/${state.publisherName}/${config.name}`,
+        openVsxPublishedUrl:
+          data.manualUploadUrl || `https://open-vsx.org/extension/${state.publisherName}/${config.name}`,
       }))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to publish to Open VSX")

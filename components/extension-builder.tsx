@@ -9,12 +9,13 @@ import { AiAssistant } from "./ai-assistant"
 import Avatar from "boring-avatars"
 import type { ExtensionConfig, Template, UserExtension } from "@/lib/types"
 import { templates } from "@/lib/templates"
-import { getStoredCredentials, saveUserExtension, getUserExtension } from "@/lib/storage"
+import { getStoredCredentials, saveUserExtension, getUserExtension, initializeUser } from "@/lib/storage"
 import { colorPalettes } from "./logo-generator"
 import { useToast } from "@/hooks/use-toast"
 
 export function ExtensionBuilder() {
   const { toast } = useToast()
+  const [isUserInitialized, setIsUserInitialized] = useState(false)
   const [currentExtensionId, setCurrentExtensionId] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
   const [config, setConfig] = useState<ExtensionConfig>({
@@ -33,6 +34,17 @@ export function ExtensionBuilder() {
   const [streamingContent, setStreamingContent] = useState("")
   const [streamingFiles, setStreamingFiles] = useState<Record<string, string>>({})
   const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>()
+
+  useEffect(() => {
+    initializeUser()
+      .then(() => {
+        setIsUserInitialized(true)
+      })
+      .catch((error) => {
+        console.error("Failed to initialize user fingerprint:", error)
+        setIsUserInitialized(true) // Continue anyway with fallback
+      })
+  }, [])
 
   // Load publisher from stored credentials on mount
   useEffect(() => {
