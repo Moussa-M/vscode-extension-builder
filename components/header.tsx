@@ -1,6 +1,6 @@
 "use client"
 
-import { Code2, Fingerprint } from "lucide-react"
+import { Code2, Fingerprint, Check, Copy } from "lucide-react"
 import { useEffect, useState } from "react"
 import { getVisitorId } from "@/lib/fingerprint"
 import { Badge } from "@/components/ui/badge"
@@ -12,10 +12,19 @@ interface HeaderProps {
 
 export function Header({ extensionName }: HeaderProps) {
   const [visitorId, setVisitorId] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     getVisitorId().then(setVisitorId)
   }, [])
+
+  const copyToClipboard = async () => {
+    if (visitorId) {
+      await navigator.clipboard.writeText(visitorId)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
 
   return (
     <header className="border-b border-border bg-sidebar">
@@ -39,15 +48,25 @@ export function Header({ extensionName }: HeaderProps) {
                 <TooltipTrigger asChild>
                   <Badge
                     variant="outline"
-                    className="flex items-center gap-1.5 px-3 py-1.5 font-mono text-xs cursor-help"
+                    className="flex items-center gap-1.5 px-3 py-1.5 font-mono text-xs cursor-pointer hover:bg-accent transition-colors"
+                    onClick={copyToClipboard}
                   >
-                    <Fingerprint className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-muted-foreground">{visitorId.slice(0, 8)}</span>
+                    {copied ? (
+                      <Check className="w-3.5 h-3.5 text-green-500" />
+                    ) : (
+                      <Fingerprint className="w-3.5 h-3.5 text-muted-foreground" />
+                    )}
+                    <span className={copied ? "text-green-500" : "text-muted-foreground"}>
+                      {copied ? "Copied!" : visitorId.slice(0, 8)}
+                    </span>
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p className="font-mono text-xs">{visitorId}</p>
-                  <p className="text-muted-foreground text-xs mt-1">Your unique device ID</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-mono text-xs">{visitorId}</p>
+                    <Copy className="w-3 h-3 text-muted-foreground" />
+                  </div>
+                  <p className="text-muted-foreground text-xs mt-1">Click to copy your device ID</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
