@@ -342,13 +342,14 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
 
   // Publish to Open VSX
   const publishToOpenVsx = useCallback(async () => {
-    if (!state.openVsxToken) {
-      setError("Open VSX token is required")
+    if (!state.publisherName) {
+      setError("Publisher name is required")
       return
     }
 
     setLoading("publishing-openvsx")
     setError(null)
+    setErrorSuggestion(null)
 
     try {
       // Save extension before publishing
@@ -360,7 +361,9 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          token: state.openVsxToken,
+          openVsxToken: state.openVsxToken || "",
+          publisher: state.publisherName,
+          extensionName: config.name || "my-extension",
           files: filesWithLogo,
         }),
       })
@@ -368,7 +371,20 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
       const data = await response.json()
 
       if (!response.ok) {
+        if (data.suggestion) {
+          setErrorSuggestion(data.suggestion)
+        }
         throw new Error(data.error || "Failed to publish to Open VSX")
+      }
+
+      // Handle partial success (VSIX created but not published)
+      if (data.success && !data.published) {
+        if (data.suggestion) {
+          setErrorSuggestion(data.suggestion)
+        }
+        if (data.vsixBase64) {
+          setFallbackVsix(data.vsixBase64)
+        }
       }
 
       setState((prev) => ({
