@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
-import { PublicGalleryAPI } from "ovsx";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 export async function POST(req: NextRequest) {
   let tempDir: string | null = null;
@@ -175,19 +178,20 @@ export async function POST(req: NextRequest) {
 
     // If OpenVSX token provided, publish using ovsx library
     if (openVsxToken) {
-      console.log("[OpenVSX] Token provided, publishing via ovsx library...");
+      console.log("[OpenVSX] Token provided, publishing via ovsx CLI...");
 
       try {
-        // Create API instance with token
-        const api = new PublicGalleryAPI({
-          registryUrl: 'https://open-vsx.org',
-          pat: openVsxToken,
+        // Use npx ovsx to publish (avoid native binding issues)
+        const publishCommand = `npx ovsx publish "${vsixPath}" -p "${openVsxToken}"`;
+        console.log("[OpenVSX] Running:", publishCommand.replace(openVsxToken, "***"));
+
+        const { stdout, stderr } = await execAsync(publishCommand, {
+          cwd: tempDir,
+          timeout: 60000, // 60 second timeout
         });
 
-        // Publish the extension
-        await api.publish({
-          extensionFile: vsixPath,
-        });
+        if (stdout) console.log("[OpenVSX] stdout:", stdout);
+        if (stderr) console.log("[OpenVSX] stderr:", stderr);
 
         console.log("[OpenVSX] Published successfully!");
 
@@ -200,7 +204,8 @@ export async function POST(req: NextRequest) {
           vsixFilename,
         });
       } catch (publishError: unknown) {
-        const errorMsg = publishError instanceof Error ? publishError.message : String(publishError);
+        const error = publishError as { stdout?: string; stderr?: string; message?: string };
+        const errorMsg = error.stderr || error.stdout || error.message || String(publishError);
         console.error("[OpenVSX] Publish failed:", errorMsg);
 
         // Check for specific error conditions

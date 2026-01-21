@@ -1,5 +1,9 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
+import { publishVSIX } from "@vscode/vsce"
+import { writeFile, unlink } from "fs/promises"
+import { tmpdir } from "os"
+import { join } from "path"
 
 export async function POST(req: NextRequest) {
   try {
@@ -125,91 +129,53 @@ export async function POST(req: NextRequest) {
     console.log("[apertacodex] VSIX generated, size:", vsixBuffer.length, "bytes")
     const vsixBase64 = vsixBuffer.toString("base64")
 
-    // If Azure PAT provided, publish via REST API
+    // If Azure PAT provided, publish using vsce library
     if (azureToken) {
-      console.log("[apertacodex] Azure PAT provided, publishing via REST API...")
+      console.log("[apertacodex] Azure PAT provided, publishing using vsce library...")
+
+      // Write VSIX to temp file
+      const tempVsixPath = join(tmpdir(), vsixFilename)
 
       try {
-        // Check if extension already exists
-        const checkRes = await fetch(
-          `https://marketplace.visualstudio.com/_apis/gallery/publishers/${publisher}/extensions/${extensionName}?api-version=7.1-preview.1`,
-          {
-            headers: {
-              Authorization: `Basic ${Buffer.from(`:${azureToken}`).toString("base64")}`,
-              Accept: "application/json",
-            },
-          },
-        )
+        await writeFile(tempVsixPath, vsixBuffer)
+        console.log("[apertacodex] VSIX written to:", tempVsixPath)
 
-        const extensionExists = checkRes.ok
-        console.log("[apertacodex] Extension exists:", extensionExists)
+        // Publish using vsce's publishVSIX function
+        console.log("[apertacodex] Publishing to marketplace...")
+        await publishVSIX(tempVsixPath, { pat: azureToken })
 
-        let publishRes: Response
+        console.log("[apertacodex] Published successfully!")
 
-        if (extensionExists) {
-          // Update existing extension - PUT with VSIX binary
-          console.log("[apertacodex] Updating existing extension...")
-          publishRes = await fetch(
-            `https://marketplace.visualstudio.com/_apis/gallery/publishers/${publisher}/extensions/${extensionName}?api-version=7.1-preview.1`,
-            {
-              method: "PUT",
-              headers: {
-                Authorization: `Basic ${Buffer.from(`:${azureToken}`).toString("base64")}`,
-                "Content-Type": "application/octet-stream",
-              },
-              body: new Uint8Array(vsixBuffer),
-            },
-          )
-        } else {
-          console.log("[apertacodex] Creating new extension with binary VSIX...")
+        // Clean up temp file
+        await unlink(tempVsixPath).catch(() => {})
 
-          // Create new extension - POST with binary VSIX (same as PUT for existing extensions)
-          publishRes = await fetch(
-            `https://marketplace.visualstudio.com/_apis/gallery/publishers/${publisher}/extensions?api-version=7.2-preview.2`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Basic ${Buffer.from(`:${azureToken}`).toString("base64")}`,
-                "Content-Type": "application/octet-stream",
-              },
-              body: new Uint8Array(vsixBuffer),
-            },
-          )
-        }
+        return NextResponse.json({
+          success: true,
+          published: true,
+          message: "Extension published successfully to the VS Code Marketplace!",
+          url: `https://marketplace.visualstudio.com/items?itemName=${publisher}.${extensionName}`,
+          vsixBase64,
+          vsixFilename,
+        })
+      } catch (err) {
+        // Clean up temp file on error
+        await unlink(tempVsixPath).catch(() => {})
 
-        console.log("[apertacodex] Publish response status:", publishRes.status)
+        const message = err instanceof Error ? err.message : String(err)
+        console.error("[apertacodex] Publishing error:", message)
 
-        if (publishRes.ok || publishRes.status === 200 || publishRes.status === 201 || publishRes.status === 202) {
-          console.log("[apertacodex] Published successfully!")
-          return NextResponse.json({
-            success: true,
-            published: true,
-            message: "Extension published successfully to the VS Code Marketplace!",
-            url: `https://marketplace.visualstudio.com/items?itemName=${publisher}.${extensionName}`,
-            vsixBase64,
-            vsixFilename,
-          })
-        }
-
-        // Handle specific error cases
-        const errorText = await publishRes.text().catch(() => "Unknown error")
-        console.error("[apertacodex] Publish failed:", publishRes.status, errorText)
-
-        // Check for version conflict
-        const isVersionConflict =
-          errorText.includes("already exists") || errorText.includes("exists already") || errorText.includes("version")
-
+        // Provide helpful suggestions based on error message
         let suggestion = "Download the VSIX and publish manually via marketplace.visualstudio.com/manage"
-        let errorMessage = `API returned ${publishRes.status}: ${errorText.substring(0, 200)}`
+        let errorMessage = `Failed to publish: ${message}`
 
-        if (isVersionConflict) {
+        if (message.includes("already exists") || message.includes("version")) {
           suggestion = `Version ${version} may already exist. Update the version in package.json (e.g., to ${incrementVersion(version)}) and try again.`
-          errorMessage = `Version conflict detected`
-        } else if (publishRes.status === 401 || publishRes.status === 403) {
+          errorMessage = "Version conflict detected"
+        } else if (message.includes("401") || message.includes("403") || message.includes("Unauthorized") || message.includes("Forbidden")) {
           suggestion =
             "Check that your Azure PAT has 'Marketplace > Manage' permission and is valid for 'All accessible organizations'."
           errorMessage = "Authentication failed - invalid or insufficient permissions"
-        } else if (publishRes.status === 404) {
+        } else if (message.includes("404") || message.includes("not found")) {
           suggestion = `Publisher '${publisher}' may not exist. Create it at marketplace.visualstudio.com/manage/createpublisher`
           errorMessage = `Publisher '${publisher}' not found`
         }
@@ -219,19 +185,6 @@ export async function POST(req: NextRequest) {
           published: false,
           error: errorMessage,
           suggestion,
-          vsixBase64,
-          vsixFilename,
-          manualUploadUrl: `https://marketplace.visualstudio.com/manage/publishers/${publisher}`,
-        })
-      } catch (publishError: unknown) {
-        const errorMsg = publishError instanceof Error ? publishError.message : String(publishError)
-        console.error("[apertacodex] Publish error:", errorMsg)
-
-        return NextResponse.json({
-          success: true,
-          published: false,
-          error: `Network error: ${errorMsg}`,
-          suggestion: "Download the VSIX and publish manually via marketplace.visualstudio.com/manage",
           vsixBase64,
           vsixFilename,
           manualUploadUrl: `https://marketplace.visualstudio.com/manage/publishers/${publisher}`,
