@@ -8,34 +8,42 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
     }
 
-    // Using Hugging Face's free inference API with Stable Diffusion
+    // Check for HF_TOKEN
+    if (!process.env.HF_TOKEN) {
+      return NextResponse.json(
+        { error: "HF_TOKEN environment variable not set. Please add your Hugging Face token." },
+        { status: 500 }
+      )
+    }
+
+    // Using Hugging Face's router API with b64_json format
     const response = await fetch("https://router.huggingface.co/nscale/v1/images/generations", {
       method: "POST",
       headers: {
+        "Authorization": `Bearer ${process.env.HF_TOKEN}`,
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.HF_TOKEN}`
       },
       body: JSON.stringify({
-        prompt: `${prompt}, simple icon, flat design, logo style, minimalist, clean background, vector art, professional`,
         model: "stabilityai/stable-diffusion-xl-base-1.0",
-        parameters: {
-          negative_prompt: "text, words, letters, watermark, signature, complex, detailed, photorealistic, 3d render",
-          num_inference_steps: 30,
-          guidance_scale: 7.5,
-          width: 512,
-          height: 512,
-        },
+        prompt: `${prompt}, simple icon, flat design, logo style, minimalist, clean background, vector art, professional`,
+        response_format: "b64_json",
       }),
     })
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error("[v0] Hugging Face API error:", errorText)
+      console.error("[v0] Hugging Face API error:", response.status, errorText)
       
-      // Check if it's a rate limit or loading error
+      if (response.status === 401) {
+        return NextResponse.json(
+          { error: "Invalid Hugging Face token. Please check your HF_TOKEN is correct." },
+          { status: 401 }
+        )
+      }
+      
       if (response.status === 503) {
         return NextResponse.json(
-          { error: "Model is loading. Please try again in a few seconds." },
+          { error: "Model is loading. Please try again in 10-20 seconds." },
           { status: 503 }
         )
       }
@@ -46,12 +54,18 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Get the image buffer
-    const imageBuffer = await response.arrayBuffer()
+    const result = await response.json()
+    console.log("[v0] HF API response structure:", Object.keys(result))
     
-    // Convert to base64 data URL
-    const base64 = Buffer.from(imageBuffer).toString("base64")
-    const dataUrl = `data:image/png;base64,${base64}`
+    // Handle b64_json response format
+    const base64Image = result.data?.[0]?.b64_json || result.images?.[0]
+    
+    if (!base64Image) {
+      console.error("[v0] No image data in response:", result)
+      throw new Error("No image data returned from API")
+    }
+    
+    const dataUrl = `data:image/png;base64,${base64Image}`
 
     return NextResponse.json({ dataUrl })
   } catch (error) {
