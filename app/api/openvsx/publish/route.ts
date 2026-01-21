@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
 
     const vsixBase64 = vsixBuffer.toString("base64");
 
-    // If OpenVSX token provided, publish using ovsx library
+    // If OpenVSX token provided, publish using REST API
     if (openVsxToken) {
       console.log("[OpenVSX] Token provided, publishing via ovsx CLI...");
 

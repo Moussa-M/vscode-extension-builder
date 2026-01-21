@@ -9,7 +9,10 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Switch } from "@/components/ui/switch"
-import { RefreshCw, Palette, Sparkles, ChevronDown, Check, Square, Circle, RotateCcw } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { RefreshCw, Palette, Sparkles, ChevronDown, Check, Square, Circle, RotateCcw, Wand2, Loader2, Maximize2 } from "lucide-react"
 import type { LogoConfig } from "@/lib/types"
 
 interface LogoGeneratorProps {
@@ -49,6 +52,13 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
   const [borderRadius, setBorderRadius] = useState(0)
   const [customColors, setCustomColors] = useState<string[]>([])
   const [useCustomColors, setUseCustomColors] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState("")
+  const [aiGenerating, setAiGenerating] = useState(false)
+  const [aiError, setAiError] = useState("")
+  const [aiGeneratedImage, setAiGeneratedImage] = useState<string | null>(null)
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [activeTab, setActiveTab] = useState("ai")
+  const [promptGenerating, setPromptGenerating] = useState(false)
   const svgContainerRef = useRef<HTMLDivElement>(null)
 
   const seed = customSeed || extensionName || "my-extension"
@@ -168,250 +178,464 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
     setCustomColors(customColors.filter((_, i) => i !== index))
   }
 
+  const generatePrompt = async () => {
+    if (!extensionName) return
+
+    setPromptGenerating(true)
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: `Generate a single short prompt (max 20 words) to describe a logo for a VS Code extension called "${extensionName}". Only respond with the prompt text, no quotes or explanation.`,
+          mode: "add",
+        }),
+      })
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error("No reader")
+
+      let fullText = ""
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        fullText += decoder.decode(value, { stream: true })
+      }
+
+      // Extract text from the response (remove any JSON structure)
+      const cleanPrompt = fullText.replace(/^["']|["']$/g, "").trim()
+      setAiPrompt(cleanPrompt)
+    } catch (error) {
+      console.error("[v0] Prompt generation error:", error)
+      // Use fallback prompt
+      setAiPrompt(`Modern ${extensionName} logo with vibrant colors`)
+    } finally {
+      setPromptGenerating(false)
+    }
+  }
+
+  const generateAILogo = async () => {
+    if (!aiPrompt.trim()) {
+      setAiError("Please enter a prompt")
+      return
+    }
+
+    setAiGenerating(true)
+    setAiError("")
+
+    try {
+      const response = await fetch("/api/generate-logo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate logo")
+      }
+
+      setAiGeneratedImage(data.dataUrl)
+      onLogoGenerated?.(data.dataUrl)
+      setHasGenerated(true)
+    } catch (error) {
+      console.error("[v0] AI logo generation error:", error)
+      setAiError(error instanceof Error ? error.message : "Failed to generate logo")
+      
+      // Fallback to SVG generator
+      console.log("[v0] Falling back to SVG generator")
+      setActiveTab("svg")
+      setTimeout(() => generateLogo(), 100)
+    } finally {
+      setAiGenerating(false)
+    }
+  }
+
+  // Auto-generate prompt when extension name changes
+  useEffect(() => {
+    if (extensionName && !aiPrompt && activeTab === "ai") {
+      generatePrompt()
+    }
+  }, [extensionName, activeTab])
+
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <Card>
-        <CollapsibleTrigger asChild>
-          <CardHeader className="pb-3 cursor-pointer hover:bg-muted/50 transition-colors">
-            <CardTitle className="text-base flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />
-                Extension Icon
-                {hasGenerated && (
-                  <span className="flex items-center gap-1 text-xs text-green-500 font-normal">
-                    <Check className="w-3 h-3" />
-                    Auto-generated
-                  </span>
-                )}
-              </span>
-              <div className="flex items-center gap-2">
-                {/* Preview thumbnail */}
-                <div
-                  className="w-8 h-8 overflow-hidden border border-border"
-                  style={{ borderRadius: isSquare ? borderRadius / 4 : "50%" }}
-                >
-                  <Avatar name={seed} variant={variant} size={32} colors={colors} square={isSquare} />
-                </div>
-                <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
-              </div>
-            </CardTitle>
-          </CardHeader>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <CardContent className="space-y-4 pt-0">
-            {/* Preview */}
-            <div className="flex justify-center p-4 bg-muted/50 rounded-lg">
+    <>
+      <Dialog open={isExpanded} onOpenChange={setIsExpanded}>
+        <DialogContent className="max-w-2xl p-8">
+          <div className="flex justify-center">
+            {aiGeneratedImage ? (
+              <img 
+                src={aiGeneratedImage || "/placeholder.svg"} 
+                alt="AI Generated Logo - Full Size" 
+                className="max-w-full max-h-[600px] rounded-lg shadow-2xl" 
+              />
+            ) : (
               <div
-                ref={svgContainerRef}
-                className="overflow-hidden shadow-lg"
+                className="overflow-hidden shadow-2xl"
                 style={{
-                  width: size,
-                  height: size,
-                  borderRadius: isSquare ? borderRadius : "50%",
+                  width: 512,
+                  height: 512,
+                  borderRadius: isSquare ? borderRadius * 2 : "50%",
                   backgroundColor: useBackground ? backgroundColor : "transparent",
                 }}
               >
-                <Avatar name={seed} variant={variant} size={size} colors={colors} square={isSquare} />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <Label className="text-xs flex items-center gap-2">
-                {isSquare ? <Square className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
-                Shape
-              </Label>
-              <div className="flex gap-2">
-                <Button
-                  variant={isSquare ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 px-2"
-                  onClick={() => setIsSquare(true)}
-                >
-                  <Square className="w-3 h-3 mr-1" />
-                  Square
-                </Button>
-                <Button
-                  variant={!isSquare ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 px-2"
-                  onClick={() => setIsSquare(false)}
-                >
-                  <Circle className="w-3 h-3 mr-1" />
-                  Circle
-                </Button>
-              </div>
-            </div>
-
-            {/* Variant selector */}
-            <div className="space-y-2">
-              <Label className="text-xs">Style</Label>
-              <div className="grid grid-cols-3 gap-2">
-                {variants.map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => setVariant(v)}
-                    className={`p-2 rounded-md text-xs font-medium transition-colors ${
-                      variant === v
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted hover:bg-muted/80 text-muted-foreground"
-                    }`}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Color palette selector */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs flex items-center gap-1">
-                  <Palette className="w-3 h-3" />
-                  Color Palette
-                </Label>
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground">Custom</Label>
-                  <Switch checked={useCustomColors} onCheckedChange={setUseCustomColors} className="scale-75" />
-                </div>
-              </div>
-
-              {!useCustomColors ? (
-                <div className="grid grid-cols-4 gap-2">
-                  {colorPalettes.map((palette, idx) => (
-                    <button
-                      key={palette.name}
-                      onClick={() => setSelectedPalette(idx)}
-                      className={`p-1 rounded-md transition-all ${
-                        selectedPalette === idx ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
-                      }`}
-                      title={palette.name}
-                    >
-                      <div className="flex h-4 rounded overflow-hidden">
-                        {palette.colors.map((color, i) => (
-                          <div key={i} className="flex-1" style={{ backgroundColor: color }} />
-                        ))}
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-1 truncate">{palette.name}</p>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                /* Custom color picker */
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {customColors.map((color, idx) => (
-                      <div key={idx} className="flex items-center gap-1">
-                        <input
-                          type="color"
-                          value={color}
-                          onChange={(e) => updateCustomColor(idx, e.target.value)}
-                          className="w-8 h-8 rounded cursor-pointer border-0"
-                        />
-                        <button
-                          onClick={() => removeCustomColor(idx)}
-                          className="text-xs text-muted-foreground hover:text-destructive"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                    {customColors.length < 5 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-2 text-xs bg-transparent"
-                        onClick={addCustomColor}
-                      >
-                        + Add Color
-                      </Button>
-                    )}
-                  </div>
-                  {customColors.length < 2 && <p className="text-xs text-amber-500">Add at least 2 colors</p>}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">Background</Label>
-                <Switch checked={useBackground} onCheckedChange={setUseBackground} className="scale-75" />
-              </div>
-              {useBackground && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={backgroundColor === "#transparent" ? "#ffffff" : backgroundColor}
-                    onChange={(e) => setBackgroundColor(e.target.value)}
-                    className="w-8 h-8 rounded cursor-pointer border-0"
-                  />
-                  <Input
-                    value={backgroundColor}
-                    onChange={(e) => setBackgroundColor(e.target.value)}
-                    placeholder="#ffffff"
-                    className="flex-1 h-8 text-sm font-mono"
-                  />
-                </div>
-              )}
-            </div>
-
-            {isSquare && (
-              <div className="space-y-2">
-                <Label className="text-xs">Corner Radius: {borderRadius}px</Label>
-                <Slider
-                  value={[borderRadius]}
-                  onValueChange={([v]) => setBorderRadius(v)}
-                  min={0}
-                  max={64}
-                  step={4}
-                  className="w-full"
-                />
+                <Avatar name={seed} variant={variant} size={512} colors={colors} square={isSquare} />
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
-            {/* Size slider */}
-            <div className="space-y-2">
-              <Label className="text-xs">Preview Size: {size}px</Label>
-              <Slider
-                value={[size]}
-                onValueChange={([v]) => setSize(v)}
-                min={64}
-                max={256}
-                step={8}
-                className="w-full"
-              />
-            </div>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="pb-3 cursor-pointer hover:bg-muted/50 transition-colors">
+              <CardTitle className="text-base flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  Extension Icon
+                  {hasGenerated && (
+                    <span className="flex items-center gap-1 text-xs text-green-500 font-normal">
+                      <Check className="w-3 h-3" />
+                      Auto-generated
+                    </span>
+                  )}
+                </span>
+                <div className="flex items-center gap-2">
+                  {/* Preview thumbnail */}
+                  <div
+                    className="w-8 h-8 overflow-hidden border border-border"
+                    style={{ borderRadius: isSquare ? borderRadius / 4 : "50%" }}
+                  >
+                    <Avatar name={seed} variant={variant} size={32} colors={colors} square={isSquare} />
+                  </div>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                </div>
+              </CardTitle>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-0">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="ai" className="text-xs">
+                    <Wand2 className="w-3 h-3 mr-1" />
+                    AI Generator
+                  </TabsTrigger>
+                  <TabsTrigger value="svg" className="text-xs">
+                    <Sparkles className="w-3 h-3 mr-1" />
+                    SVG Generator
+                  </TabsTrigger>
+                </TabsList>
 
-            {/* Custom seed */}
-            <div className="space-y-2">
-              <Label className="text-xs">Custom Seed</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={customSeed}
-                  onChange={(e) => setCustomSeed(e.target.value)}
-                  placeholder={extensionName || "extension-name"}
-                  className="flex-1 h-8 text-sm"
-                />
-                <Button variant="outline" size="sm" onClick={randomizeSeed} className="h-8 px-2 bg-transparent">
-                  <RefreshCw className="w-3 h-3" />
-                </Button>
-              </div>
-            </div>
+                <TabsContent value="svg" className="space-y-4 mt-4">
+                  {/* Preview */}
+                  <div className="flex justify-center p-4 bg-muted/50 rounded-lg relative group">
+                    <div
+                      ref={svgContainerRef}
+                      className="overflow-hidden shadow-lg cursor-pointer transition-transform hover:scale-105"
+                      style={{
+                        width: size,
+                        height: size,
+                        borderRadius: isSquare ? borderRadius : "50%",
+                        backgroundColor: useBackground ? backgroundColor : "transparent",
+                      }}
+                      onClick={() => setIsExpanded(true)}
+                    >
+                      <Avatar name={seed} variant={variant} size={size} colors={colors} square={isSquare} />
+                    </div>
+                    <div className="absolute top-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      <Maximize2 className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  </div>
 
-            <div className="flex justify-between items-center pt-2 border-t">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetToDefaults}
-                className="h-7 px-2 text-xs text-muted-foreground"
-              >
-                <RotateCcw className="w-3 h-3 mr-1" />
-                Reset to Defaults
-              </Button>
-              <p className="text-xs text-muted-foreground">Auto-included on publish</p>
-            </div>
-          </CardContent>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs flex items-center gap-2">
+                      {isSquare ? <Square className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
+                      Shape
+                    </Label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={isSquare ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 px-2"
+                        onClick={() => setIsSquare(true)}
+                      >
+                        <Square className="w-3 h-3 mr-1" />
+                        Square
+                      </Button>
+                      <Button
+                        variant={!isSquare ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 px-2"
+                        onClick={() => setIsSquare(false)}
+                      >
+                        <Circle className="w-3 h-3 mr-1" />
+                        Circle
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Variant selector */}
+                  <div className="space-y-2">
+                    <Label className="text-xs">Style</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {variants.map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => setVariant(v)}
+                          className={`p-2 rounded-md text-xs font-medium transition-colors ${
+                            variant === v
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Color palette selector */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs flex items-center gap-1">
+                        <Palette className="w-3 h-3" />
+                        Color Palette
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-muted-foreground">Custom</Label>
+                        <Switch checked={useCustomColors} onCheckedChange={setUseCustomColors} className="scale-75" />
+                      </div>
+                    </div>
+
+                    {!useCustomColors ? (
+                      <div className="grid grid-cols-4 gap-2">
+                        {colorPalettes.map((palette, idx) => (
+                          <button
+                            key={palette.name}
+                            onClick={() => setSelectedPalette(idx)}
+                            className={`p-1 rounded-md transition-all ${
+                              selectedPalette === idx ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
+                            }`}
+                            title={palette.name}
+                          >
+                            <div className="flex h-4 rounded overflow-hidden">
+                              {palette.colors.map((color, i) => (
+                                <div key={i} className="flex-1" style={{ backgroundColor: color }} />
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-1 truncate">{palette.name}</p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      /* Custom color picker */
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap gap-2">
+                          {customColors.map((color, idx) => (
+                            <div key={idx} className="flex items-center gap-1">
+                              <input
+                                type="color"
+                                value={color}
+                                onChange={(e) => updateCustomColor(idx, e.target.value)}
+                                className="w-8 h-8 rounded cursor-pointer border-0"
+                              />
+                              <button
+                                onClick={() => removeCustomColor(idx)}
+                                className="text-xs text-muted-foreground hover:text-destructive"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                          {customColors.length < 5 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2 text-xs bg-transparent"
+                              onClick={addCustomColor}
+                            >
+                              + Add Color
+                            </Button>
+                          )}
+                        </div>
+                        {customColors.length < 2 && <p className="text-xs text-amber-500">Add at least 2 colors</p>}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Background</Label>
+                      <Switch checked={useBackground} onCheckedChange={setUseBackground} className="scale-75" />
+                    </div>
+                    {useBackground && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={backgroundColor === "#transparent" ? "#ffffff" : backgroundColor}
+                          onChange={(e) => setBackgroundColor(e.target.value)}
+                          className="w-8 h-8 rounded cursor-pointer border-0"
+                        />
+                        <Input
+                          value={backgroundColor}
+                          onChange={(e) => setBackgroundColor(e.target.value)}
+                          placeholder="#ffffff"
+                          className="flex-1 h-8 text-sm font-mono"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {isSquare && (
+                    <div className="space-y-2">
+                      <Label className="text-xs">Corner Radius: {borderRadius}px</Label>
+                      <Slider
+                        value={[borderRadius]}
+                        onValueChange={([v]) => setBorderRadius(v)}
+                        min={0}
+                        max={64}
+                        step={4}
+                        className="w-full"
+                      />
+                    </div>
+                  )}
+
+                  {/* Size slider */}
+                  <div className="space-y-2">
+                    <Label className="text-xs">Preview Size: {size}px</Label>
+                    <Slider
+                      value={[size]}
+                      onValueChange={([v]) => setSize(v)}
+                      min={64}
+                      max={256}
+                      step={8}
+                      className="w-full"
+                    />
+                  </div>
+
+                  {/* Custom seed */}
+                  <div className="space-y-2">
+                    <Label className="text-xs">Custom Seed</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={customSeed}
+                        onChange={(e) => setCustomSeed(e.target.value)}
+                        placeholder={extensionName || "extension-name"}
+                        className="flex-1 h-8 text-sm"
+                      />
+                      <Button variant="outline" size="sm" onClick={randomizeSeed} className="h-8 px-2 bg-transparent">
+                        <RefreshCw className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2 border-t">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetToDefaults}
+                      className="h-7 px-2 text-xs text-muted-foreground"
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Reset to Defaults
+                    </Button>
+                    <p className="text-xs text-muted-foreground">Auto-included on publish</p>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="ai" className="space-y-4 mt-4">
+                  {/* AI Preview */}
+                  {aiGeneratedImage && (
+                    <div className="flex justify-center p-4 bg-muted/50 rounded-lg relative group">
+                      <img 
+                        src={aiGeneratedImage || "/placeholder.svg"} 
+                        alt="AI Generated Logo" 
+                        className="w-32 h-32 rounded-lg shadow-lg cursor-pointer transition-transform hover:scale-105" 
+                        onClick={() => setIsExpanded(true)}
+                      />
+                      <div className="absolute top-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        <Maximize2 className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI Prompt */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Describe your logo</Label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={generatePrompt}
+                        disabled={promptGenerating || !extensionName}
+                        className="h-6 px-2 text-xs"
+                      >
+                        {promptGenerating ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-3 h-3 mr-1" />
+                            Auto-generate
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <Textarea
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      placeholder={`e.g., "A modern ${extensionName || "VS Code extension"} logo with blue and purple colors"`}
+                      className="min-h-20 text-sm resize-none"
+                      disabled={promptGenerating}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {promptGenerating ? "Generating prompt description..." : "Tip: Be specific about colors, style, and theme. Click 'Auto-generate' for AI suggestions."}
+                    </p>
+                  </div>
+
+                  {aiError && (
+                    <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                      <p className="text-xs text-destructive">{aiError}</p>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={generateAILogo}
+                    disabled={aiGenerating || !aiPrompt.trim()}
+                    className="w-full"
+                    size="sm"
+                  >
+                    {aiGenerating ? (
+                      <>
+                        <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-3 h-3 mr-2" />
+                        Generate AI Logo
+                      </>
+                    )}
+                  </Button>
+
+                  <div className="pt-2 border-t">
+                    <p className="text-xs text-muted-foreground text-center">
+                      Powered by Hugging Face (Free tier - may take 10-20 seconds)
+                    </p>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
         </CollapsibleContent>
       </Card>
     </Collapsible>
+    </>
   )
 }
