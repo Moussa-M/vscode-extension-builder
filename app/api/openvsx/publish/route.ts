@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
-import { PublicGalleryAPI } from "ovsx";
 
 export async function POST(req: NextRequest) {
   let tempDir: string | null = null;
@@ -173,21 +172,29 @@ export async function POST(req: NextRequest) {
 
     const vsixBase64 = vsixBuffer.toString("base64");
 
-    // If OpenVSX token provided, publish using ovsx library
+    // If OpenVSX token provided, publish using REST API
     if (openVsxToken) {
-      console.log("[OpenVSX] Token provided, publishing via ovsx library...");
+      console.log("[OpenVSX] Token provided, publishing via REST API...");
 
       try {
-        // Create API instance with token
-        const api = new PublicGalleryAPI({
-          registryUrl: 'https://open-vsx.org',
-          pat: openVsxToken,
-        });
+        // Use OpenVSX REST API to publish
+        const publishResponse = await fetch(
+          `https://open-vsx.org/api/-/publish`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${openVsxToken}`,
+            },
+            body: vsixBuffer,
+          }
+        );
 
-        // Publish the extension
-        await api.publish({
-          extensionFile: vsixPath,
-        });
+        if (!publishResponse.ok) {
+          const errorText = await publishResponse.text();
+          throw new Error(
+            `OpenVSX API error ${publishResponse.status}: ${errorText}`
+          );
+        }
 
         console.log("[OpenVSX] Published successfully!");
 
@@ -200,7 +207,10 @@ export async function POST(req: NextRequest) {
           vsixFilename,
         });
       } catch (publishError: unknown) {
-        const errorMsg = publishError instanceof Error ? publishError.message : String(publishError);
+        const errorMsg =
+          publishError instanceof Error
+            ? publishError.message
+            : String(publishError);
         console.error("[OpenVSX] Publish failed:", errorMsg);
 
         // Check for specific error conditions
