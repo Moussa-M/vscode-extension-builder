@@ -157,41 +157,22 @@ export async function POST(req: NextRequest) {
                 Authorization: `Basic ${Buffer.from(`:${azureToken}`).toString("base64")}`,
                 "Content-Type": "application/octet-stream",
               },
-              body: vsixBuffer,
+              body: new Uint8Array(vsixBuffer),
             },
           )
         } else {
-          console.log("[apertacodex] Creating new extension with multipart form...")
+          console.log("[apertacodex] Creating new extension with binary VSIX...")
 
-          // Create multipart boundary
-          const boundary = `----VSIXBoundary${Date.now()}`
-
-          // Build multipart form data manually
-          const formDataParts: Buffer[] = []
-
-          // Add the VSIX file part
-          formDataParts.push(
-            Buffer.from(
-              `--${boundary}\r\n` +
-                `Content-Disposition: form-data; name="file"; filename="${vsixFilename}"\r\n` +
-                `Content-Type: application/vsix\r\n\r\n`,
-            ),
-          )
-          formDataParts.push(vsixBuffer)
-          formDataParts.push(Buffer.from(`\r\n--${boundary}--\r\n`))
-
-          const formBody = Buffer.concat(formDataParts)
-
+          // Create new extension - POST with binary VSIX (same as PUT for existing extensions)
           publishRes = await fetch(
-            `https://marketplace.visualstudio.com/_apis/gallery/publishers/${publisher}/extensions?api-version=7.1-preview.1`,
+            `https://marketplace.visualstudio.com/_apis/gallery/publishers/${publisher}/extensions?api-version=7.2-preview.2`,
             {
               method: "POST",
               headers: {
                 Authorization: `Basic ${Buffer.from(`:${azureToken}`).toString("base64")}`,
-                "Content-Type": `multipart/form-data; boundary=${boundary}`,
-                "Content-Length": formBody.length.toString(),
+                "Content-Type": "application/octet-stream",
               },
-              body: formBody,
+              body: new Uint8Array(vsixBuffer),
             },
           )
         }

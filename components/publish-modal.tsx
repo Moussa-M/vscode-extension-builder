@@ -300,13 +300,22 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
         await onSave()
       }
 
+      // Extract extension name from package.json
+      let extensionName = "my-extension";
+      try {
+        const pkg = JSON.parse(filesWithLogo["package.json"]);
+        extensionName = pkg.name || config.name || config.displayName?.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "my-extension";
+      } catch {
+        extensionName = config.name || config.displayName?.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "my-extension";
+      }
+
       const response = await fetch("/api/vsce/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           azureToken: state.azureToken || "",
           publisher: state.publisherName,
-          extensionName: config.name || "my-extension",
+          extensionName,
           files: filesWithLogo,
         }),
       })
@@ -379,13 +388,22 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
         await onSave()
       }
 
+      // Extract extension name from package.json
+      let extensionName = "my-extension";
+      try {
+        const pkg = JSON.parse(filesWithLogo["package.json"]);
+        extensionName = pkg.name || config.name || config.displayName?.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "my-extension";
+      } catch {
+        extensionName = config.name || config.displayName?.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "my-extension";
+      }
+
       const response = await fetch("/api/openvsx/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           openVsxToken: state.openVsxToken || "",
           publisher: state.publisherName,
-          extensionName: config.name || "my-extension",
+          extensionName,
           files: filesWithLogo,
         }),
       })

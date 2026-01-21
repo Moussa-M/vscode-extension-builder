@@ -325,10 +325,26 @@ export function AiAssistant({
       if (Object.keys(files).length > 0) {
         let extractedConfig: Partial<ExtensionConfig> | undefined
 
-        if (files["package.json"]) {
+        // Format JSON files with proper line breaks
+        const formattedFiles: Record<string, string> = {}
+        for (const [filePath, content] of Object.entries(files)) {
+          if (filePath.endsWith(".json")) {
+            try {
+              // Parse and reformat JSON with proper indentation
+              const jsonContent = typeof content === "string" ? JSON.parse(content as string) : content
+              formattedFiles[filePath] = JSON.stringify(jsonContent, null, 2)
+            } catch (e) {
+              // If parsing fails, keep original content
+              formattedFiles[filePath] = content as string
+            }
+          } else {
+            formattedFiles[filePath] = content as string
+          }
+        }
+
+        if (formattedFiles["package.json"]) {
           try {
-            const pkgContent = files["package.json"]
-            const pkg = typeof pkgContent === "string" ? JSON.parse(pkgContent) : pkgContent
+            const pkg = JSON.parse(formattedFiles["package.json"])
             extractedConfig = {
               name: pkg.name,
               displayName: pkg.displayName,
@@ -344,7 +360,7 @@ export function AiAssistant({
         }
 
         return {
-          files,
+          files: formattedFiles,
           message: parsed.message || "Generated successfully",
           commands: parsed.commands || [],
           activationEvents: parsed.activationEvents || [],
@@ -402,8 +418,25 @@ export function AiAssistant({
     }
 
     if (Object.keys(files).length > 0) {
+      // Format JSON files with proper line breaks
+      const formattedFiles: Record<string, string> = {}
+      for (const [filePath, content] of Object.entries(files)) {
+        if (filePath.endsWith(".json")) {
+          try {
+            // Parse and reformat JSON with proper indentation
+            const jsonContent = JSON.parse(content)
+            formattedFiles[filePath] = JSON.stringify(jsonContent, null, 2)
+          } catch (e) {
+            // If parsing fails, keep original content
+            formattedFiles[filePath] = content
+          }
+        } else {
+          formattedFiles[filePath] = content
+        }
+      }
+
       return {
-        files,
+        files: formattedFiles,
         message: "Extracted files from response",
         commands: [],
         activationEvents: [],
@@ -476,12 +509,33 @@ export function AiAssistant({
       }
 
       if (foundEnd && content.length > 0) {
-        completedFiles[filename] = content
+        // Format JSON files with proper line breaks
+        if (filename.endsWith(".json")) {
+          try {
+            const jsonContent = JSON.parse(content)
+            completedFiles[filename] = JSON.stringify(jsonContent, null, 2)
+          } catch (e) {
+            // If parsing fails, keep original content
+            completedFiles[filename] = content
+          }
+        } else {
+          completedFiles[filename] = content
+        }
       }
 
       if (i === matchArray.length - 1) {
         currentFile = filename
-        currentContent = content
+        // Format current content if it's a JSON file
+        if (filename.endsWith(".json")) {
+          try {
+            const jsonContent = JSON.parse(content)
+            currentContent = JSON.stringify(jsonContent, null, 2)
+          } catch (e) {
+            currentContent = content
+          }
+        } else {
+          currentContent = content
+        }
       }
     }
 

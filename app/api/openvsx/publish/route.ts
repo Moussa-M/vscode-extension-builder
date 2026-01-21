@@ -1,12 +1,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
-
-const execAsync = promisify(exec);
+import { PublicGalleryAPI } from "ovsx";
 
 export async function POST(req: NextRequest) {
   let tempDir: string | null = null;
@@ -176,22 +173,21 @@ export async function POST(req: NextRequest) {
 
     const vsixBase64 = vsixBuffer.toString("base64");
 
-    // If OpenVSX token provided, publish using ovsx CLI
+    // If OpenVSX token provided, publish using ovsx library
     if (openVsxToken) {
-      console.log("[OpenVSX] Token provided, publishing via ovsx CLI...");
+      console.log("[OpenVSX] Token provided, publishing via ovsx library...");
 
       try {
-        // Run ovsx publish as subprocess
-        const { stdout, stderr } = await execAsync(
-          `npx ovsx publish "${vsixPath}" -p "${openVsxToken}"`,
-          {
-            cwd: tempDir,
-            timeout: 60000, // 60 second timeout
-          }
-        );
+        // Create API instance with token
+        const api = new PublicGalleryAPI({
+          registryUrl: 'https://open-vsx.org',
+          pat: openVsxToken,
+        });
 
-        console.log("[OpenVSX] ovsx stdout:", stdout);
-        if (stderr) console.log("[OpenVSX] ovsx stderr:", stderr);
+        // Publish the extension
+        await api.publish({
+          extensionFile: vsixPath,
+        });
 
         console.log("[OpenVSX] Published successfully!");
 
@@ -204,12 +200,7 @@ export async function POST(req: NextRequest) {
           vsixFilename,
         });
       } catch (publishError: unknown) {
-        const error = publishError as {
-          stdout?: string;
-          stderr?: string;
-          message?: string;
-        };
-        const errorMsg = error.stderr || error.stdout || error.message || "";
+        const errorMsg = publishError instanceof Error ? publishError.message : String(publishError);
         console.error("[OpenVSX] Publish failed:", errorMsg);
 
         // Check for specific error conditions
