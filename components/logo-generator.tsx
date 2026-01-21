@@ -9,7 +9,9 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Switch } from "@/components/ui/switch"
-import { RefreshCw, Palette, Sparkles, ChevronDown, Check, Square, Circle, RotateCcw } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import { RefreshCw, Palette, Sparkles, ChevronDown, Check, Square, Circle, RotateCcw, Wand2, Loader2 } from "lucide-react"
 import type { LogoConfig } from "@/lib/types"
 
 interface LogoGeneratorProps {
@@ -49,6 +51,10 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
   const [borderRadius, setBorderRadius] = useState(0)
   const [customColors, setCustomColors] = useState<string[]>([])
   const [useCustomColors, setUseCustomColors] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState("")
+  const [aiGenerating, setAiGenerating] = useState(false)
+  const [aiError, setAiError] = useState("")
+  const [aiGeneratedImage, setAiGeneratedImage] = useState<string | null>(null)
   const svgContainerRef = useRef<HTMLDivElement>(null)
 
   const seed = customSeed || extensionName || "my-extension"
@@ -168,6 +174,39 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
     setCustomColors(customColors.filter((_, i) => i !== index))
   }
 
+  const generateAILogo = async () => {
+    if (!aiPrompt.trim()) {
+      setAiError("Please enter a prompt")
+      return
+    }
+
+    setAiGenerating(true)
+    setAiError("")
+
+    try {
+      const response = await fetch("/api/generate-logo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate logo")
+      }
+
+      setAiGeneratedImage(data.dataUrl)
+      onLogoGenerated?.(data.dataUrl)
+      setHasGenerated(true)
+    } catch (error) {
+      console.error("[v0] AI logo generation error:", error)
+      setAiError(error instanceof Error ? error.message : "Failed to generate logo")
+    } finally {
+      setAiGenerating(false)
+    }
+  }
+
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <Card>
@@ -199,203 +238,216 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
         </CollapsibleTrigger>
         <CollapsibleContent>
           <CardContent className="space-y-4 pt-0">
-            {/* Preview */}
-            <div className="flex justify-center p-4 bg-muted/50 rounded-lg">
-              <div
-                ref={svgContainerRef}
-                className="overflow-hidden shadow-lg"
-                style={{
-                  width: size,
-                  height: size,
-                  borderRadius: isSquare ? borderRadius : "50%",
-                  backgroundColor: useBackground ? backgroundColor : "transparent",
-                }}
-              >
-                <Avatar name={seed} variant={variant} size={size} colors={colors} square={isSquare} />
-              </div>
-            </div>
+            <Tabs defaultValue="svg" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="svg" className="text-xs">
+                  <Sparkles className="w-3 h-3 mr-1" />
+                  SVG Generator
+                </TabsTrigger>
+                <TabsTrigger value="ai" className="text-xs">
+                  <Wand2 className="w-3 h-3 mr-1" />
+                  AI Generator
+                </TabsTrigger>
+              </TabsList>
 
-            <div className="flex items-center justify-between">
-              <Label className="text-xs flex items-center gap-2">
-                {isSquare ? <Square className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
-                Shape
-              </Label>
-              <div className="flex gap-2">
-                <Button
-                  variant={isSquare ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 px-2"
-                  onClick={() => setIsSquare(true)}
-                >
-                  <Square className="w-3 h-3 mr-1" />
-                  Square
-                </Button>
-                <Button
-                  variant={!isSquare ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 px-2"
-                  onClick={() => setIsSquare(false)}
-                >
-                  <Circle className="w-3 h-3 mr-1" />
-                  Circle
-                </Button>
-              </div>
-            </div>
-
-            {/* Variant selector */}
-            <div className="space-y-2">
-              <Label className="text-xs">Style</Label>
-              <div className="grid grid-cols-3 gap-2">
-                {variants.map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => setVariant(v)}
-                    className={`p-2 rounded-md text-xs font-medium transition-colors ${
-                      variant === v
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted hover:bg-muted/80 text-muted-foreground"
-                    }`}
+              <TabsContent value="svg" className="space-y-4 mt-4">
+                {/* Preview */}
+                <div className="flex justify-center p-4 bg-muted/50 rounded-lg">
+                  <div
+                    ref={svgContainerRef}
+                    className="overflow-hidden shadow-lg"
+                    style={{
+                      width: size,
+                      height: size,
+                      borderRadius: isSquare ? borderRadius : "50%",
+                      backgroundColor: useBackground ? backgroundColor : "transparent",
+                    }}
                   >
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Color palette selector */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs flex items-center gap-1">
-                  <Palette className="w-3 h-3" />
-                  Color Palette
-                </Label>
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground">Custom</Label>
-                  <Switch checked={useCustomColors} onCheckedChange={setUseCustomColors} className="scale-75" />
-                </div>
-              </div>
-
-              {!useCustomColors ? (
-                <div className="grid grid-cols-4 gap-2">
-                  {colorPalettes.map((palette, idx) => (
-                    <button
-                      key={palette.name}
-                      onClick={() => setSelectedPalette(idx)}
-                      className={`p-1 rounded-md transition-all ${
-                        selectedPalette === idx ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
-                      }`}
-                      title={palette.name}
-                    >
-                      <div className="flex h-4 rounded overflow-hidden">
-                        {palette.colors.map((color, i) => (
-                          <div key={i} className="flex-1" style={{ backgroundColor: color }} />
-                        ))}
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-1 truncate">{palette.name}</p>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                /* Custom color picker */
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {customColors.map((color, idx) => (
-                      <div key={idx} className="flex items-center gap-1">
-                        <input
-                          type="color"
-                          value={color}
-                          onChange={(e) => updateCustomColor(idx, e.target.value)}
-                          className="w-8 h-8 rounded cursor-pointer border-0"
-                        />
-                        <button
-                          onClick={() => removeCustomColor(idx)}
-                          className="text-xs text-muted-foreground hover:text-destructive"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                    {customColors.length < 5 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-2 text-xs bg-transparent"
-                        onClick={addCustomColor}
-                      >
-                        + Add Color
-                      </Button>
-                    )}
+                    <Avatar name={seed} variant={variant} size={size} colors={colors} square={isSquare} />
                   </div>
-                  {customColors.length < 2 && <p className="text-xs text-amber-500">Add at least 2 colors</p>}
                 </div>
-              )}
-            </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">Background</Label>
-                <Switch checked={useBackground} onCheckedChange={setUseBackground} className="scale-75" />
-              </div>
-              {useBackground && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={backgroundColor === "#transparent" ? "#ffffff" : backgroundColor}
-                    onChange={(e) => setBackgroundColor(e.target.value)}
-                    className="w-8 h-8 rounded cursor-pointer border-0"
-                  />
-                  <Input
-                    value={backgroundColor}
-                    onChange={(e) => setBackgroundColor(e.target.value)}
-                    placeholder="#ffffff"
-                    className="flex-1 h-8 text-sm font-mono"
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs flex items-center gap-2">
+                    {isSquare ? <Square className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
+                    Shape
+                  </Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={isSquare ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => setIsSquare(true)}
+                    >
+                      <Square className="w-3 h-3 mr-1" />
+                      Square
+                    </Button>
+                    <Button
+                      variant={!isSquare ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => setIsSquare(false)}
+                    >
+                      <Circle className="w-3 h-3 mr-1" />
+                      Circle
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Variant selector */}
+                <div className="space-y-2">
+                  <Label className="text-xs">Style</Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {variants.map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setVariant(v)}
+                        className={`p-2 rounded-md text-xs font-medium transition-colors ${
+                          variant === v
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                        }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Color palette selector */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs flex items-center gap-1">
+                      <Palette className="w-3 h-3" />
+                      Color Palette
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-muted-foreground">Custom</Label>
+                      <Switch checked={useCustomColors} onCheckedChange={setUseCustomColors} className="scale-75" />
+                    </div>
+                  </div>
+
+                  {!useCustomColors ? (
+                    <div className="grid grid-cols-4 gap-2">
+                      {colorPalettes.map((palette, idx) => (
+                        <button
+                          key={palette.name}
+                          onClick={() => setSelectedPalette(idx)}
+                          className={`p-1 rounded-md transition-all ${
+                            selectedPalette === idx ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
+                          }`}
+                          title={palette.name}
+                        >
+                          <div className="flex h-4 rounded overflow-hidden">
+                            {palette.colors.map((color, i) => (
+                              <div key={i} className="flex-1" style={{ backgroundColor: color }} />
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-1 truncate">{palette.name}</p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    /* Custom color picker */
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        {customColors.map((color, idx) => (
+                          <div key={idx} className="flex items-center gap-1">
+                            <input
+                              type="color"
+                              value={color}
+                              onChange={(e) => updateCustomColor(idx, e.target.value)}
+                              className="w-8 h-8 rounded cursor-pointer border-0"
+                            />
+                            <button
+                              onClick={() => removeCustomColor(idx)}
+                              className="text-xs text-muted-foreground hover:text-destructive"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                        {customColors.length < 5 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2 text-xs bg-transparent"
+                            onClick={addCustomColor}
+                          >
+                            + Add Color
+                          </Button>
+                        )}
+                      </div>
+                      {customColors.length < 2 && <p className="text-xs text-amber-500">Add at least 2 colors</p>}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Background</Label>
+                    <Switch checked={useBackground} onCheckedChange={setUseBackground} className="scale-75" />
+                  </div>
+                  {useBackground && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={backgroundColor === "#transparent" ? "#ffffff" : backgroundColor}
+                        onChange={(e) => setBackgroundColor(e.target.value)}
+                        className="w-8 h-8 rounded cursor-pointer border-0"
+                      />
+                      <Input
+                        value={backgroundColor}
+                        onChange={(e) => setBackgroundColor(e.target.value)}
+                        placeholder="#ffffff"
+                        className="flex-1 h-8 text-sm font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {isSquare && (
+                  <div className="space-y-2">
+                    <Label className="text-xs">Corner Radius: {borderRadius}px</Label>
+                    <Slider
+                      value={[borderRadius]}
+                      onValueChange={([v]) => setBorderRadius(v)}
+                      min={0}
+                      max={64}
+                      step={4}
+                      className="w-full"
+                    />
+                  </div>
+                )}
+
+                {/* Size slider */}
+                <div className="space-y-2">
+                  <Label className="text-xs">Preview Size: {size}px</Label>
+                  <Slider
+                    value={[size]}
+                    onValueChange={([v]) => setSize(v)}
+                    min={64}
+                    max={256}
+                    step={8}
+                    className="w-full"
                   />
                 </div>
-              )}
-            </div>
 
-            {isSquare && (
-              <div className="space-y-2">
-                <Label className="text-xs">Corner Radius: {borderRadius}px</Label>
-                <Slider
-                  value={[borderRadius]}
-                  onValueChange={([v]) => setBorderRadius(v)}
-                  min={0}
-                  max={64}
-                  step={4}
-                  className="w-full"
-                />
-              </div>
-            )}
-
-            {/* Size slider */}
-            <div className="space-y-2">
-              <Label className="text-xs">Preview Size: {size}px</Label>
-              <Slider
-                value={[size]}
-                onValueChange={([v]) => setSize(v)}
-                min={64}
-                max={256}
-                step={8}
-                className="w-full"
-              />
-            </div>
-
-            {/* Custom seed */}
-            <div className="space-y-2">
-              <Label className="text-xs">Custom Seed</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={customSeed}
-                  onChange={(e) => setCustomSeed(e.target.value)}
-                  placeholder={extensionName || "extension-name"}
-                  className="flex-1 h-8 text-sm"
-                />
-                <Button variant="outline" size="sm" onClick={randomizeSeed} className="h-8 px-2 bg-transparent">
-                  <RefreshCw className="w-3 h-3" />
-                </Button>
-              </div>
-            </div>
+                {/* Custom seed */}
+                <div className="space-y-2">
+                  <Label className="text-xs">Custom Seed</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={customSeed}
+                      onChange={(e) => setCustomSeed(e.target.value)}
+                      placeholder={extensionName || "extension-name"}
+                      className="flex-1 h-8 text-sm"
+                    />
+                    <Button variant="outline" size="sm" onClick={randomizeSeed} className="h-8 px-2 bg-transparent">
+                      <RefreshCw className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </div>
 
             <div className="flex justify-between items-center pt-2 border-t">
               <Button
@@ -409,6 +461,62 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
               </Button>
               <p className="text-xs text-muted-foreground">Auto-included on publish</p>
             </div>
+              </TabsContent>
+
+              <TabsContent value="ai" className="space-y-4 mt-4">
+                {/* AI Preview */}
+                {aiGeneratedImage && (
+                  <div className="flex justify-center p-4 bg-muted/50 rounded-lg">
+                    <img src={aiGeneratedImage || "/placeholder.svg"} alt="AI Generated Logo" className="w-32 h-32 rounded-lg shadow-lg" />
+                  </div>
+                )}
+
+                {/* AI Prompt */}
+                <div className="space-y-2">
+                  <Label className="text-xs">Describe your logo</Label>
+                  <Textarea
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder={`e.g., "A modern ${extensionName || "VS Code extension"} logo with blue and purple colors"`}
+                    className="min-h-20 text-sm resize-none"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Tip: Be specific about colors, style, and theme. The AI will add "icon" and "logo style" automatically.
+                  </p>
+                </div>
+
+                {aiError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                    <p className="text-xs text-destructive">{aiError}</p>
+                  </div>
+                )}
+
+                <Button
+                  onClick={generateAILogo}
+                  disabled={aiGenerating || !aiPrompt.trim()}
+                  className="w-full"
+                  size="sm"
+                >
+                  {aiGenerating ? (
+                    <>
+                      <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="w-3 h-3 mr-2" />
+                      Generate AI Logo
+                    </>
+                  )}
+                </Button>
+
+                <div className="pt-2 border-t">
+                  <p className="text-xs text-muted-foreground text-center">
+                    Powered by Hugging Face (Free tier - may take 10-20 seconds)
+                  </p>
+                </div>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </CollapsibleContent>
       </Card>
