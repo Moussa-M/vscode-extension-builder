@@ -333,13 +333,13 @@ export function ExtensionBuilder() {
   return (
     <div className="min-h-screen bg-background">
       <Header extensionName={config.displayName || config.name} />
-      <main className="w-full max-w-none px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 xl:grid-cols-[400px_1fr] gap-8">
-          <div className="space-y-6">
-            <div className="flex gap-2 border-b border-border overflow-x-auto">
+      <main className="w-full max-w-none px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] xl:grid-cols-[400px_1fr] gap-4 sm:gap-6 lg:gap-8">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="flex gap-1 sm:gap-2 border-b border-border overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
               <button
                 onClick={() => setActiveTab("templates")}
-                className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                   activeTab === "templates"
                     ? "text-primary border-b-2 border-primary"
                     : "text-muted-foreground hover:text-foreground"
@@ -349,17 +349,17 @@ export function ExtensionBuilder() {
               </button>
               <button
                 onClick={() => setActiveTab("config")}
-                className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                   activeTab === "config"
                     ? "text-primary border-b-2 border-primary"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Configuration
+                Config
               </button>
               <button
                 onClick={() => setActiveTab("ai")}
-                className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                   activeTab === "ai"
                     ? "text-primary border-b-2 border-primary"
                     : "text-muted-foreground hover:text-foreground"

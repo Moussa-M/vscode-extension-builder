@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,6 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Download, ExternalLink, Loader2, RefreshCw, Package } from "lucide-react"
 import { getStoredCredentials } from "@/lib/storage"
-import { getCredentials } from "@/lib/credentials" // Declare the getCredentials function
 
 interface PublishedExtension {
   extensionId?: string
@@ -40,6 +39,16 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [publisherName, setPublisherName] = useState("")
+
+  // Load publisher name from saved credentials when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const credentials = getStoredCredentials()
+      if (credentials.publisherName) {
+        setPublisherName(credentials.publisherName)
+      }
+    }
+  }, [isOpen])
 
   const fetchVsCodeExtensions = async () => {
     setLoading(true)

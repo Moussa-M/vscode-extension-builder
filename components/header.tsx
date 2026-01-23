@@ -28,15 +28,15 @@ export function Header({ extensionName }: HeaderProps) {
 
   return (
     <header className="border-b border-border bg-sidebar">
-      <div className="px-6 lg:px-8 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-              <Code2 className="w-6 h-6 text-primary" />
+      <div className="px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <div className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/10 flex-shrink-0">
+              <Code2 className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">VSCode Extension Builder</h1>
-              <p className="text-sm text-muted-foreground">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base sm:text-xl font-bold text-foreground truncate">VSCode Extension Builder</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate">
                 {extensionName ? `Editing: ${extensionName}` : "Build extensions with AI + Templates"}
               </p>
             </div>
@@ -48,15 +48,15 @@ export function Header({ extensionName }: HeaderProps) {
                 <TooltipTrigger asChild>
                   <Badge
                     variant="outline"
-                    className="flex items-center gap-1.5 px-3 py-1.5 font-mono text-xs cursor-pointer hover:bg-accent transition-colors"
+                    className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 font-mono text-[10px] sm:text-xs cursor-pointer hover:bg-accent transition-colors flex-shrink-0"
                     onClick={copyToClipboard}
                   >
                     {copied ? (
-                      <Check className="w-3.5 h-3.5 text-green-500" />
+                      <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-green-500" />
                     ) : (
-                      <Fingerprint className="w-3.5 h-3.5 text-muted-foreground" />
+                      <Fingerprint className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-muted-foreground" />
                     )}
-                    <span className={copied ? "text-green-500" : "text-muted-foreground"}>
+                    <span className={`hidden sm:inline ${copied ? "text-green-500" : "text-muted-foreground"}`}>
                       {copied ? "Copied!" : visitorId.slice(0, 8)}
                     </span>
                   </Badge>

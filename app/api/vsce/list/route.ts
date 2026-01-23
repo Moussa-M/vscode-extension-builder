@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Fetch extensions from VS Code Marketplace for this publisher
+    // filterType 10 = Publisher name
     const response = await fetch(
       `https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery`,
       {
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
             {
               criteria: [
                 {
-                  filterType: 7,
+                  filterType: 10,
                   value: publisher,
                 },
               ],
