@@ -15,6 +15,8 @@ import {
   FileJson,
   FileCode,
   FileText,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -184,6 +186,7 @@ export function CodePreview({
   const [publishModalOpen, setPublishModalOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editedContent, setEditedContent] = useState<string>("")
+  const [showFileTree, setShowFileTree] = useState(true)
 
   const codeContainerRef = useRef<HTMLDivElement>(null)
 
@@ -369,17 +372,17 @@ export function CodePreview({
   const activeFileIcon = fileIcons[getFileExtension(activeFile)] || <File className="w-4 h-4 text-muted-foreground" />
 
   return (
-    <Card className="h-[calc(100vh-12rem)] flex flex-col overflow-hidden">
-      <CardHeader className="pb-2 border-b border-border shrink-0">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
+    <Card className="h-[calc(100vh-16rem)] sm:h-[calc(100vh-14rem)] lg:h-[calc(100vh-12rem)] min-h-100 flex flex-col overflow-hidden">
+      <CardHeader className="pb-2 border-b border-border shrink-0 px-3 sm:px-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <CardTitle className="text-sm sm:text-base flex items-center gap-2">
             Generated Extension
             {!isEmpty && (
               <span className="text-xs font-normal text-muted-foreground">{Object.keys(files).length} files</span>
             )}
           </CardTitle>
           {!isEmpty && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
               {!isEditing ? (
                 <Button variant="outline" size="sm" onClick={handleStartEditing} title="Edit current file">
                   <Pencil className="w-4 h-4" />
@@ -411,8 +414,8 @@ export function CodePreview({
                 className="bg-violet-600 hover:bg-violet-700"
                 title="Publish extension"
               >
-                <Rocket className="w-4 h-4 mr-1.5" />
-                Publish
+                <Rocket className="w-4 h-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Publish</span>
               </Button>
             </div>
           )}
@@ -434,7 +437,7 @@ export function CodePreview({
       ) : (
         <div className="flex-1 flex overflow-hidden">
           {/* File Tree Sidebar */}
-          <div className="w-48 border-r border-border bg-muted/30 shrink-0">
+          <div className={`${showFileTree ? 'w-40 sm:w-48' : 'w-0'} border-r border-border bg-muted/30 shrink-0 transition-all duration-200 overflow-hidden`}>
             <ScrollArea className="h-full">
               <div className="p-2 space-y-0.5">
                 {Object.entries(fileTree).map(([dir, dirFiles]) => (
@@ -496,11 +499,18 @@ export function CodePreview({
 
           {/* Code Content */}
           <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
-            <div className="px-4 py-2 border-b border-border/50 bg-[#161b22] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1 text-xs font-mono text-muted-foreground">
+            <div className="px-2 sm:px-4 py-2 border-b border-border/50 bg-[#161b22] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  onClick={() => setShowFileTree(!showFileTree)}
+                  className="p-1 hover:bg-muted/50 rounded transition-colors shrink-0"
+                  title={showFileTree ? "Hide file tree" : "Show file tree"}
+                >
+                  {showFileTree ? <PanelLeftClose className="w-4 h-4 text-muted-foreground" /> : <PanelLeft className="w-4 h-4 text-muted-foreground" />}
+                </button>
+                <span className="flex items-center gap-1 text-xs font-mono text-muted-foreground truncate">
                   {activeFileIcon}
-                  {activeFile}
+                  <span className="truncate">{activeFile}</span>
                 </span>
                 {isEditing && (
                   <span className="text-xs text-yellow-500 flex items-center gap-1">

@@ -762,23 +762,23 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
   )
 
   const renderGithubStep = () => (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label className="text-zinc-300">Repository Path</Label>
-          <div className="flex gap-2 items-center">
+          <Label className="text-zinc-300 text-sm">Repository Path</Label>
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
             <Input
               value={state.repoOwner}
               onChange={(e) => updateState({ repoOwner: e.target.value })}
               placeholder="owner"
-              className="bg-zinc-900 border-zinc-700 text-zinc-100 w-1/3"
+              className="bg-zinc-900 border-zinc-700 text-zinc-100 sm:w-1/3"
             />
-            <span className="text-zinc-500">/</span>
+            <span className="text-zinc-500 hidden sm:inline">/</span>
             <Input
               value={state.repoName}
               onChange={(e) => updateState({ repoName: e.target.value })}
               placeholder="repository-name"
-              className="bg-zinc-900 border-zinc-700 text-zinc-100 flex-1"
+              className="bg-zinc-900 border-zinc-700 text-zinc-100 sm:flex-1"
             />
           </div>
           <p className="text-xs text-zinc-500">
@@ -1136,20 +1136,20 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-2xl max-h-[85vh] overflow-y-auto bg-zinc-950 border-zinc-800"
+        className="w-[95vw] max-w-2xl max-h-[90vh] sm:max-h-[85vh] overflow-y-auto bg-zinc-950 border-zinc-800 p-4 sm:p-6"
         onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => e.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Rocket className="h-5 w-5 text-violet-400" />
+          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Rocket className="h-4 w-4 sm:h-5 sm:w-5 text-violet-400" />
             Publish Extension
           </DialogTitle>
-          <DialogDescription>Deploy to GitHub, VS Code Marketplace & Open VSX</DialogDescription>
+          <DialogDescription className="text-xs sm:text-sm">Deploy to GitHub, VS Code Marketplace & Open VSX</DialogDescription>
         </DialogHeader>
 
         {/* Progress Steps */}
-        <div className="flex items-center justify-between py-4">
+        <div className="flex items-center justify-between py-2 sm:py-4 overflow-x-auto">
           {steps.map((step, index) => {
             const StepIcon = step.icon
             const isActive = currentStep === step.id
@@ -1158,11 +1158,11 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
               <div key={step.id} className="flex items-center">
                 <button
                   onClick={() => setCurrentStep(step.id as PublishStep)}
-                  className={`flex flex-col items-center gap-1 transition-all ${isActive ? "scale-110" : ""}`}
+                  className={`flex flex-col items-center gap-0.5 sm:gap-1 transition-all ${isActive ? "scale-105 sm:scale-110" : ""}`}
                   disabled={loading !== null}
                 >
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                    className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-colors ${
                       isPast
                         ? "bg-green-500/20 text-green-400"
                         : isActive
@@ -1170,10 +1170,10 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
                           : "bg-muted text-muted-foreground"
                     }`}
                   >
-                    {isPast ? <CheckCircle2 className="h-5 w-5" /> : <StepIcon className="h-5 w-5" />}
+                    {isPast ? <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" /> : <StepIcon className="h-4 w-4 sm:h-5 sm:w-5" />}
                   </div>
                   <span
-                    className={`text-xs font-medium ${
+                    className={`text-[10px] sm:text-xs font-medium ${
                       isActive ? "text-violet-400" : isPast ? "text-green-400" : "text-muted-foreground"
                     }`}
                   >
@@ -1181,7 +1181,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
                   </span>
                 </button>
                 {index < steps.length - 1 && (
-                  <div className={`w-8 h-0.5 mx-1 mt-[-20px] ${isPast ? "bg-green-500/50" : "bg-border"}`} />
+                  <div className={`w-4 sm:w-8 h-0.5 mx-0.5 sm:mx-1 -mt-4 sm:-mt-5 ${isPast ? "bg-green-500/50" : "bg-border"}`} />
                 )}
               </div>
             )

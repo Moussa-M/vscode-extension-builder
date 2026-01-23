@@ -205,13 +205,13 @@ export function ExtensionManagerModal({ isOpen, onClose, extension, onDelete }: 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Package className="w-5 h-5" />
+          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Package className="w-4 h-4 sm:w-5 sm:h-5" />
             Manage Extension
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs sm:text-sm">
             Unpublish or delete "{extension.displayName || extension.name}" from various platforms
           </DialogDescription>
         </DialogHeader>
@@ -225,17 +225,17 @@ export function ExtensionManagerModal({ isOpen, onClose, extension, onDelete }: 
           </div>
 
           <Tabs defaultValue="github" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="github" className="text-xs">
+            <TabsList className="grid w-full grid-cols-4 h-auto">
+              <TabsTrigger value="github" className="text-[10px] sm:text-xs px-1 sm:px-3 py-1.5">
                 GitHub
               </TabsTrigger>
-              <TabsTrigger value="vscode" className="text-xs">
+              <TabsTrigger value="vscode" className="text-[10px] sm:text-xs px-1 sm:px-3 py-1.5">
                 VS Code
               </TabsTrigger>
-              <TabsTrigger value="openvsx" className="text-xs">
+              <TabsTrigger value="openvsx" className="text-[10px] sm:text-xs px-1 sm:px-3 py-1.5">
                 Open VSX
               </TabsTrigger>
-              <TabsTrigger value="local" className="text-xs">
+              <TabsTrigger value="local" className="text-[10px] sm:text-xs px-1 sm:px-3 py-1.5">
                 Local
               </TabsTrigger>
             </TabsList>

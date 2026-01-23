@@ -141,23 +141,23 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[80vh]">
+      <DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] sm:max-h-[80vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Package className="w-5 h-5" />
+          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Package className="w-4 h-4 sm:w-5 sm:h-5" />
             My Published Extensions
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label className="text-sm">Publisher Name</Label>
+            <Label className="text-xs sm:text-sm">Publisher Name</Label>
             <div className="flex gap-2">
               <Input
                 value={publisherName}
                 onChange={(e) => setPublisherName(e.target.value)}
                 placeholder="Your publisher name"
-                className="flex-1"
+                className="flex-1 text-sm"
               />
             </div>
             <p className="text-xs text-muted-foreground">
@@ -172,9 +172,9 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
           )}
 
           <Tabs defaultValue="vscode" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="vscode">VS Code Marketplace</TabsTrigger>
-              <TabsTrigger value="openvsx">Open VSX</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 h-auto">
+              <TabsTrigger value="vscode" className="text-xs sm:text-sm px-2 sm:px-4 py-1.5">VS Code Marketplace</TabsTrigger>
+              <TabsTrigger value="openvsx" className="text-xs sm:text-sm px-2 sm:px-4 py-1.5">Open VSX</TabsTrigger>
             </TabsList>
 
             <TabsContent value="vscode" className="space-y-3 mt-4">
@@ -182,7 +182,7 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
                 onClick={fetchVsCodeExtensions}
                 disabled={loading || !publisherName}
                 size="sm"
-                className="w-full"
+                className="w-full text-xs sm:text-sm"
               >
                 {loading ? (
                   <>
@@ -197,7 +197,7 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
                 )}
               </Button>
 
-              <ScrollArea className="h-[400px]">
+              <ScrollArea className="h-75 sm:h-100">
                 {vsCodeExtensions.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -266,7 +266,7 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
                 onClick={fetchOpenVsxExtensions}
                 disabled={loading || !publisherName}
                 size="sm"
-                className="w-full"
+                className="w-full text-xs sm:text-sm"
               >
                 {loading ? (
                   <>
@@ -281,7 +281,7 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
                 )}
               </Button>
 
-              <ScrollArea className="h-[400px]">
+              <ScrollArea className="h-75 sm:h-100">
                 {openVsxExtensions.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />

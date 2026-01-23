@@ -912,22 +912,22 @@ export function AiAssistant({
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-zinc-800 bg-zinc-900/50 px-4 py-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/20">
-          <Sparkles className="h-5 w-5 text-white" />
+      <div className="flex items-center gap-2 sm:gap-3 border-b border-zinc-800 bg-zinc-900/50 px-3 sm:px-4 py-2 sm:py-3">
+        <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-linear-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/20 shrink-0">
+          <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
         </div>
-        <div>
-          <h3 className="font-semibold text-white">AI Extension Generator</h3>
-          <p className="text-xs text-zinc-400">Powered by Claude</p>
+        <div className="min-w-0">
+          <h3 className="font-semibold text-white text-sm sm:text-base truncate">AI Extension Generator</h3>
+          <p className="text-[10px] sm:text-xs text-zinc-400">Powered by Claude</p>
         </div>
       </div>
 
       {/* Mode Tabs */}
-      <div className="flex gap-2 border-b border-zinc-800 bg-zinc-900/30 px-4 py-2">
+      <div className="flex gap-1.5 sm:gap-2 border-b border-zinc-800 bg-zinc-900/30 px-3 sm:px-4 py-2 overflow-x-auto">
         <Badge
           variant={mode === "add-feature" ? "default" : "outline"}
           className={cn(
-            "cursor-pointer transition-colors",
+            "cursor-pointer transition-colors text-xs whitespace-nowrap",
             mode === "add-feature" ? "bg-violet-600 hover:bg-violet-700" : "hover:bg-zinc-800",
           )}
           onClick={() => setMode("add-feature")}
@@ -937,7 +937,7 @@ export function AiAssistant({
         <Badge
           variant={mode === "generate-scratch" ? "default" : "outline"}
           className={cn(
-            "cursor-pointer transition-colors",
+            "cursor-pointer transition-colors text-xs whitespace-nowrap",
             mode === "generate-scratch" ? "bg-violet-600 hover:bg-violet-700" : "hover:bg-zinc-800",
           )}
           onClick={() => setMode("generate-scratch")}
@@ -948,10 +948,10 @@ export function AiAssistant({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4">
         {messages.length === 0 ? (
-          <div className="space-y-4">
-            <p className="text-sm text-zinc-400">
+          <div className="space-y-3 sm:space-y-4">
+            <p className="text-xs sm:text-sm text-zinc-400">
               {mode === "add-feature"
                 ? "Describe the feature you want to add to your extension"
                 : "Describe your extension idea and AI will generate everything"}
@@ -961,10 +961,10 @@ export function AiAssistant({
                 <button
                   key={i}
                   onClick={() => setPrompt(suggestion)}
-                  className="flex w-full items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-left text-sm text-zinc-300 transition-colors hover:border-violet-500/50 hover:bg-zinc-800"
+                  className="flex w-full items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-2 sm:px-3 py-2 text-left text-xs sm:text-sm text-zinc-300 transition-colors hover:border-violet-500/50 hover:bg-zinc-800"
                 >
-                  <Sparkles className="h-3 w-3 text-violet-400" />
-                  {suggestion}
+                  <Sparkles className="h-3 w-3 text-violet-400 shrink-0" />
+                  <span className="line-clamp-2">{suggestion}</span>
                 </button>
               ))}
             </div>
@@ -1147,7 +1147,7 @@ export function AiAssistant({
       </div>
 
       {/* Input */}
-      <div className="border-t border-zinc-800 bg-zinc-900/50 p-4">
+      <div className="border-t border-zinc-800 bg-zinc-900/50 p-3 sm:p-4">
         <div className="relative">
           <Textarea
             ref={textareaRef}
@@ -1156,7 +1156,7 @@ export function AiAssistant({
             onKeyDown={handleKeyDown}
             placeholder={mode === "add-feature" ? "Describe the feature to add..." : "Describe your extension idea..."}
             disabled={isGenerating}
-            className="min-h-[50px] resize-none border-zinc-800 bg-zinc-900 pr-12 text-white placeholder:text-zinc-500"
+            className="min-h-[50px] resize-none border-zinc-800 bg-zinc-900 pr-12 text-sm sm:text-base text-white placeholder:text-zinc-500"
             rows={1}
           />
           <div className="absolute bottom-2 right-2">
