@@ -6,14 +6,26 @@ export async function POST(req: Request) {
   const { prompt, config, template, mode, existingFiles, recoveredFiles, validationErrors, isFixAttempt } =
     (await req.json()) as {
       prompt: string
-      config: ExtensionConfig
-      template: Template | null
-      mode: "add-feature" | "generate-scratch" | "modify"
+      config?: ExtensionConfig
+      template?: Template | null
+      mode?: "add-feature" | "generate-scratch" | "modify"
       existingFiles?: Record<string, string>
       recoveredFiles?: Record<string, string>
       validationErrors?: Array<{ file: string; line: number; column: number; message: string }>
       isFixAttempt?: boolean
     }
+  
+  // If config is not provided (e.g., for simple prompt generation), use defaults
+  const safeConfig = config || {
+    name: "my-extension",
+    displayName: "My Extension",
+    description: "",
+    publisher: "publisher",
+    version: "0.0.1",
+    category: "Other",
+  }
+  
+  const safeMode = mode || "generate-scratch"
 
   const recoveryContext =
     recoveredFiles && Object.keys(recoveredFiles).length > 0
@@ -87,14 +99,14 @@ Output ONLY the files that needed fixes, not the entire project.`
   const mainPrompt = `You are a world-class VS Code extension developer with expertise in TypeScript, the VS Code Extension API, and software architecture. You create production-ready, well-documented, and thoroughly tested VS Code extensions.
 
 === CURRENT PROJECT CONTEXT ===
-Extension Name: "${config.displayName || config.name || "My Extension"}"
-Identifier: "${config.name || "my-extension"}"
-Publisher: "${config.publisher || "publisher"}"
-Version: "${config.version || "0.0.1"}"
-Category: "${config.category || "Other"}"
-Description: "${config.description || ""}"
+Extension Name: "${safeConfig.displayName || safeConfig.name || "My Extension"}"
+Identifier: "${safeConfig.name || "my-extension"}"
+Publisher: "${safeConfig.publisher || "publisher"}"
+Version: "${safeConfig.version || "0.0.1"}"
+Category: "${safeConfig.category || "Other"}"
+Description: "${safeConfig.description || ""}"
 Base Template: ${template?.name || "Custom/Blank"}
-Mode: ${mode}
+Mode: ${safeMode}
 ${recoveryContext}
 ${validationContext}
 ${
@@ -107,7 +119,7 @@ ${Object.entries(existingFiles)
 }
 
 ${
-  mode === "generate-scratch"
+  safeMode === "generate-scratch"
     ? `CREATE A COMPLETE VS CODE EXTENSION from scratch based on the user's description.
 
 IMPORTANT: If the user hasn't provided a specific extension name, you MUST infer a good name from their description.
@@ -140,7 +152,7 @@ Include progress indicators, status bar items, and informative notifications whe
     : ""
 }
 ${
-  mode === "add-feature"
+  safeMode === "add-feature"
     ? `ADD A NEW FEATURE to the existing extension.
 - Analyze the existing code structure carefully
 - Create new files or modify existing ones as needed
@@ -152,7 +164,7 @@ ${
     : ""
 }
 ${
-  mode === "modify"
+  safeMode === "modify"
     ? `MODIFY the existing extension based on the user's specific request.
 - Make targeted, precise changes while preserving other functionality
 - Update related files and imports as necessary
@@ -184,8 +196,8 @@ CRITICAL: Your code will be validated for syntax errors. Ensure:
 - Valid JSON in package.json and other .json files
 
 === COMMAND NAMING CONVENTION ===
-All commands MUST use this pattern: ${config.name || "myext"}.commandName
-Example: ${config.name || "myext"}.helloWorld, ${config.name || "myext"}.runTask
+All commands MUST use this pattern: ${safeConfig.name || "myext"}.commandName
+Example: ${safeConfig.name || "myext"}.helloWorld, ${safeConfig.name || "myext"}.runTask
 
 === PACKAGE.JSON STRUCTURE ===
 Ensure package.json includes:

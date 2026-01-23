@@ -1,5 +1,7 @@
 "use client"
 
+import React from "react"
+
 import { useState, useRef, useCallback, useEffect } from "react"
 import Avatar from "boring-avatars"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,7 +14,7 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
-import { RefreshCw, Palette, Sparkles, ChevronDown, Check, Square, Circle, RotateCcw, Wand2, Loader2, Maximize2 } from "lucide-react"
+import { RefreshCw, Palette, Sparkles, ChevronDown, Check, Square, Circle, RotateCcw, Wand2, Loader2, Maximize2, Upload } from "lucide-react"
 import type { LogoConfig } from "@/lib/types"
 
 interface LogoGeneratorProps {
@@ -59,6 +61,8 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
   const [isExpanded, setIsExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState("ai")
   const [promptGenerating, setPromptGenerating] = useState(false)
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const svgContainerRef = useRef<HTMLDivElement>(null)
 
   const seed = customSeed || extensionName || "my-extension"
@@ -254,6 +258,25 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
     }
   }
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please upload an image file")
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string
+      setUploadedImage(dataUrl)
+      onLogoGenerated?.(dataUrl)
+      setHasGenerated(true)
+    }
+    reader.readAsDataURL(file)
+  }
+
   // Auto-generate prompt when extension name changes
   useEffect(() => {
     if (extensionName && !aiPrompt && activeTab === "ai") {
@@ -266,7 +289,13 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
       <Dialog open={isExpanded} onOpenChange={setIsExpanded}>
         <DialogContent className="max-w-2xl p-8">
           <div className="flex justify-center">
-            {aiGeneratedImage ? (
+            {uploadedImage ? (
+              <img 
+                src={uploadedImage || "/placeholder.svg"} 
+                alt="Uploaded Logo - Full Size" 
+                className="max-w-full max-h-[600px] rounded-lg shadow-2xl" 
+              />
+            ) : aiGeneratedImage ? (
               <img 
                 src={aiGeneratedImage || "/placeholder.svg"} 
                 alt="AI Generated Logo - Full Size" 
@@ -320,14 +349,18 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
           <CollapsibleContent>
             <CardContent className="space-y-4 pt-0">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="ai" className="text-xs">
                     <Wand2 className="w-3 h-3 mr-1" />
-                    AI Generator
+                    AI
+                  </TabsTrigger>
+                  <TabsTrigger value="upload" className="text-xs">
+                    <Upload className="w-3 h-3 mr-1" />
+                    Upload
                   </TabsTrigger>
                   <TabsTrigger value="svg" className="text-xs">
                     <Sparkles className="w-3 h-3 mr-1" />
-                    SVG Generator
+                    SVG
                   </TabsTrigger>
                 </TabsList>
 
@@ -545,6 +578,49 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
                       Reset to Defaults
                     </Button>
                     <p className="text-xs text-muted-foreground">Auto-included on publish</p>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="upload" className="space-y-4 mt-4">
+                  {/* Upload Preview */}
+                  {uploadedImage && (
+                    <div className="flex justify-center p-4 bg-muted/50 rounded-lg relative group">
+                      <img 
+                        src={uploadedImage || "/placeholder.svg"} 
+                        alt="Uploaded Logo" 
+                        className="w-32 h-32 rounded-lg shadow-lg cursor-pointer transition-transform hover:scale-105 object-contain" 
+                        onClick={() => setIsExpanded(true)}
+                      />
+                      <div className="absolute top-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        <Maximize2 className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Upload Area */}
+                  <div className="space-y-2">
+                    <Label className="text-xs">Upload your logo</Label>
+                    <div 
+                      className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground mb-1">Click to upload or drag and drop</p>
+                      <p className="text-xs text-muted-foreground">PNG, JPG, SVG, or WEBP (max 2MB)</p>
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </div>
+
+                  <div className="pt-2 border-t">
+                    <p className="text-xs text-muted-foreground text-center">
+                      Uploaded images will be used as-is. Recommended size: 128x128px
+                    </p>
                   </div>
                 </TabsContent>
 

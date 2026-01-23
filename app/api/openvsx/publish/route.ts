@@ -3,10 +3,6 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
 
 export async function POST(req: NextRequest) {
   let tempDir: string | null = null;
@@ -178,20 +174,27 @@ export async function POST(req: NextRequest) {
 
     // If OpenVSX token provided, publish using REST API
     if (openVsxToken) {
-      console.log("[OpenVSX] Token provided, publishing via ovsx CLI...");
+      console.log("[OpenVSX] Token provided, publishing via REST API...");
 
       try {
-        // Use npx ovsx to publish (avoid native binding issues)
-        const publishCommand = `npx ovsx publish "${vsixPath}" -p "${openVsxToken}"`;
-        console.log("[OpenVSX] Running:", publishCommand.replace(openVsxToken, "***"));
+        // Use OpenVSX REST API to publish
+        const publishResponse = await fetch(
+          `https://open-vsx.org/api/-/publish`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${openVsxToken}`,
+            },
+            body: vsixBuffer,
+          }
+        );
 
-        const { stdout, stderr } = await execAsync(publishCommand, {
-          cwd: tempDir,
-          timeout: 60000, // 60 second timeout
-        });
-
-        if (stdout) console.log("[OpenVSX] stdout:", stdout);
-        if (stderr) console.log("[OpenVSX] stderr:", stderr);
+        if (!publishResponse.ok) {
+          const errorText = await publishResponse.text();
+          throw new Error(
+            `OpenVSX API error ${publishResponse.status}: ${errorText}`
+          );
+        }
 
         console.log("[OpenVSX] Published successfully!");
 
@@ -204,8 +207,10 @@ export async function POST(req: NextRequest) {
           vsixFilename,
         });
       } catch (publishError: unknown) {
-        const error = publishError as { stdout?: string; stderr?: string; message?: string };
-        const errorMsg = error.stderr || error.stdout || error.message || String(publishError);
+        const errorMsg =
+          publishError instanceof Error
+            ? publishError.message
+            : String(publishError);
         console.error("[OpenVSX] Publish failed:", errorMsg);
 
         // Check for specific error conditions

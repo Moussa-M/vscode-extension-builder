@@ -867,7 +867,7 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
             ) : (
               <>
                 <Rocket className="h-4 w-4 mr-2" />
-                Publish to VS Marketplace 
+                Publish to VS Marketplace
               </>
             )}
           </Button>
@@ -879,27 +879,11 @@ export function PublishModal({ open, onOpenChange, config, files, logoDataUrl, o
         )}
 
         {state.publishedUrl && (
-          <div className="space-y-2 mt-2">
-            <div className="text-xs text-green-400 flex items-center gap-2">
-              <CheckCircle2 className="h-3 w-3" />
-              <a className="underline" href={state.publishedUrl} target="_blank" rel="noreferrer">
-                Published to VS Marketplace
-              </a>
-            </div>
-            <div className="text-xs text-amber-400 flex items-start gap-2">
-              <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-              <span>
-                Verification takes a few minutes. The extension link may not work immediately.{" "}
-                <a
-                  href={`https://marketplace.visualstudio.com/manage/publishers/${state.publisherName}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline hover:text-amber-300"
-                >
-                  Monitor your extension here
-                </a>
-              </span>
-            </div>
+          <div className="text-xs text-green-400 flex items-center gap-2 mt-2">
+            <CheckCircle2 className="h-3 w-3" />
+            <a className="underline" href={state.publishedUrl} target="_blank" rel="noreferrer">
+              Published to VS Marketplace
+            </a>
           </div>
         )}
       </div>

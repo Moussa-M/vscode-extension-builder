@@ -160,16 +160,21 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
           continue
         }
 
-        // Check if it's an image (for icon)
-        if (relativePath.match(/\.(png|jpg|jpeg|gif|svg)$/i)) {
+        // Check if it's an image
+        if (relativePath.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)$/i)) {
+          const blob = await zipEntry.async("blob")
+          const dataUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.readAsDataURL(blob)
+          })
+          
+          // Store image as data URL in boilerplate
+          boilerplate[relativePath] = dataUrl
+          
           // Check if this is the icon referenced in package.json
           if (packageJson.icon && relativePath.includes(packageJson.icon.replace("./", ""))) {
-            const blob = await zipEntry.async("blob")
-            logoDataUrl = await new Promise<string>((resolve) => {
-              const reader = new FileReader()
-              reader.onload = () => resolve(reader.result as string)
-              reader.readAsDataURL(blob)
-            })
+            logoDataUrl = dataUrl
           }
           continue
         }

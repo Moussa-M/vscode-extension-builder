@@ -327,7 +327,14 @@ export function CodePreview({
     if (streamingFile === activeFile && streamingContent !== undefined) {
       return streamingContent
     }
-    return files[activeFile] || ""
+    const content = files[activeFile] || ""
+    
+    // If it's an image file, show image preview info instead of data URL
+    if (activeFile.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)$/i) && content.startsWith("data:")) {
+      return `[Image File: ${activeFile}]\n\nThis is a binary image file stored as a data URL.\nIt will be included when you export or publish the extension.\n\nData URL preview:\n${content.substring(0, 100)}...`
+    }
+    
+    return content
   }, [isEditing, editedContent, streamingFile, activeFile, streamingContent, files, streamingFiles])
 
   const isStreaming = streamingFile === activeFile
@@ -516,15 +523,25 @@ export function CodePreview({
                 className="flex-1 w-full p-4 text-[13px] font-mono leading-6 bg-[#0d1117] text-foreground/80 resize-none focus:outline-none overflow-auto"
                 spellCheck={false}
               />
-            ) : (
-              <div className="flex-1 overflow-auto" ref={codeContainerRef}>
-                <pre className="p-4 text-[13px] font-mono leading-6 min-w-max">
-                  <code>
-                    {highlightCode(displayContent, getFileExtension(activeFile))}
-                    {isStreaming && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />}
-                  </code>
-                </pre>
+            ) : activeFile.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)$/i) && displayContent.startsWith("data:") ? (
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="text-center space-y-4">
+                  <img 
+                    src={displayContent.split('\n')[0] || "/placeholder.svg"} 
+                    alt={activeFile} 
+                    className="max-w-md max-h-96 rounded-lg shadow-xl border border-border mx-auto"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    {activeFile} • Image file included in extension
+                  </p>
+                </div>
               </div>
+            ) : (
+              <ScrollArea ref={codeContainerRef} className="flex-1">
+                <div className="p-4 text-[13px] font-mono leading-6">
+                  {highlightCode(displayContent, getFileExtension(activeFile))}
+                </div>
+              </ScrollArea>
             )}
           </div>
         </div>

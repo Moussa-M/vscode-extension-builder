@@ -171,8 +171,15 @@ export function ExtensionBuilder() {
       const ext = template.userExtension
       setCurrentExtensionId(ext.id)
       setConfig(ext.config)
-      setGeneratedCode(ext.boilerplate)
-      setLogoDataUrl(ext.logoDataUrl)
+      
+      // Load boilerplate and ensure logo is included
+      const loadedCode = { ...ext.boilerplate }
+      if (ext.logoDataUrl) {
+        loadedCode["images/icon.png"] = ext.logoDataUrl
+        setLogoDataUrl(ext.logoDataUrl)
+      }
+      
+      setGeneratedCode(loadedCode)
       setActiveTab("config")
       return
     }
