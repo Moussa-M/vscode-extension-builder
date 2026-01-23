@@ -17,6 +17,7 @@ import {
   Settings,
   Upload,
   Loader2,
+  Download,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +28,7 @@ import { scratchTemplate } from "@/lib/templates"
 import { getAllUserExtensions, deleteUserExtension, saveUserExtension, type UserExtension } from "@/lib/storage"
 import { motion, AnimatePresence } from "framer-motion"
 import { ExtensionManagerModal } from "./extension-manager-modal"
+import { PublishedExtensionsModal } from "./published-extensions-modal"
 import JSZip from "jszip"
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -71,6 +73,7 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
   const [managingExtension, setManagingExtension] = useState<UserExtension | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [showPublishedModal, setShowPublishedModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -444,7 +447,16 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
                 </Badge>
               )}
             </div>
-            <div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5 bg-transparent"
+                onClick={() => setShowPublishedModal(true)}
+              >
+                <Download className="w-3 h-3" />
+                My Published
+              </Button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -510,6 +522,16 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
           if (managingExtension) {
             handleDeleteUserExtension(managingExtension.id)
           }
+        }}
+      />
+
+      <PublishedExtensionsModal
+        isOpen={showPublishedModal}
+        onClose={() => setShowPublishedModal(false)}
+        onImport={async (vsixUrl) => {
+          // TODO: Implement VSIX download and import
+          console.log("[v0] Import VSIX from:", vsixUrl)
+          alert("VSIX import coming soon! For now, download the VSIX manually and import via ZIP.")
         }}
       />
     </div>
