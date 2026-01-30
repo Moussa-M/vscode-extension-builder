@@ -86,7 +86,7 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
 
       setVsCodeExtensions(data.extensions)
     } catch (err) {
-      console.error("[v0] Failed to fetch VS Code extensions:", err)
+      console.error("[App] Failed to fetch VS Code extensions:", err)
       setError(err instanceof Error ? err.message : "Failed to fetch extensions")
     } finally {
       setLoading(false)
@@ -120,7 +120,7 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
 
       setOpenVsxExtensions(data.extensions)
     } catch (err) {
-      console.error("[v0] Failed to fetch OpenVSX extensions:", err)
+      console.error("[App] Failed to fetch OpenVSX extensions:", err)
       setError(err instanceof Error ? err.message : "Failed to fetch extensions")
     } finally {
       setLoading(false)

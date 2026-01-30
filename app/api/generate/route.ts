@@ -256,7 +256,7 @@ Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse(
 
   try {
     const result = streamText({
-      model: "anthropic/claude-sonnet-4-20250514",
+      model: "anthropic/sonnet-4-20250514",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: isFixAttempt ? "Fix the syntax errors listed above." : prompt },

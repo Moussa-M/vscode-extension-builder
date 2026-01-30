@@ -530,7 +530,7 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
         onClose={() => setShowPublishedModal(false)}
         onImport={async (vsixUrl) => {
           // TODO: Implement VSIX download and import
-          console.log("[v0] Import VSIX from:", vsixUrl)
+          console.log("[App] Import VSIX from:", vsixUrl)
           alert("VSIX import coming soon! For now, download the VSIX manually and import via ZIP.")
         }}
       />

@@ -212,7 +212,7 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
       const cleanPrompt = fullText.replace(/^["']|["']$/g, "").trim()
       setAiPrompt(cleanPrompt)
     } catch (error) {
-      console.error("[v0] Prompt generation error:", error)
+      console.error("[App] Prompt generation error:", error)
       // Use fallback prompt
       setAiPrompt(`Modern ${extensionName} logo with vibrant colors`)
     } finally {
@@ -246,11 +246,11 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
       onLogoGenerated?.(data.dataUrl)
       setHasGenerated(true)
     } catch (error) {
-      console.error("[v0] AI logo generation error:", error)
+      console.error("[App] AI logo generation error:", error)
       setAiError(error instanceof Error ? error.message : "Failed to generate logo")
       
       // Fallback to SVG generator
-      console.log("[v0] Falling back to SVG generator")
+      console.log("[App] Falling back to SVG generator")
       setActiveTab("svg")
       setTimeout(() => generateLogo(), 100)
     } finally {

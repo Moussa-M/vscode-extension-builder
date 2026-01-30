@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error("[v0] Hugging Face API error:", response.status, errorText)
+      console.error("[App] Hugging Face API error:", response.status, errorText)
       
       if (response.status === 401) {
         return NextResponse.json(
@@ -55,13 +55,13 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await response.json()
-    console.log("[v0] HF API response structure:", Object.keys(result))
+    console.log("[App] HF API response structure:", Object.keys(result))
     
     // Handle b64_json response format
     const base64Image = result.data?.[0]?.b64_json || result.images?.[0]
     
     if (!base64Image) {
-      console.error("[v0] No image data in response:", result)
+      console.error("[App] No image data in response:", result)
       throw new Error("No image data returned from API")
     }
     
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ dataUrl })
   } catch (error) {
-    console.error("[v0] Error generating AI logo:", error)
+    console.error("[App] Error generating AI logo:", error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to generate logo" },
       { status: 500 }

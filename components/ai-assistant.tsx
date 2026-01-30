@@ -236,7 +236,7 @@ export function AiAssistant({
       const lastBrace = cleaned.lastIndexOf("}")
 
       if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-        console.log("[v0] No valid JSON boundaries found")
+        console.log("[App] No valid JSON boundaries found")
         return null
       }
 
@@ -248,7 +248,7 @@ export function AiAssistant({
         const parsed = JSON.parse(cleaned)
         return processParseResult(parsed)
       } catch (directError) {
-        console.log("[v0] Direct parse failed, trying repairs...")
+        console.log("[App] Direct parse failed, trying repairs...")
       }
 
       // Try to repair common JSON issues
@@ -263,13 +263,13 @@ export function AiAssistant({
         const parsed = JSON.parse(repaired)
         return processParseResult(parsed)
       } catch (repairedError) {
-        console.log("[v0] Repaired parse failed:", (repairedError as Error).message?.slice(0, 100))
+        console.log("[App] Repaired parse failed:", (repairedError as Error).message?.slice(0, 100))
       }
 
       // Final fallback: extract files using a state machine parser
       return extractFilesWithStateMachine(text)
     } catch (e) {
-      console.log("[v0] JSON parse error:", (e as Error).message?.slice(0, 100))
+      console.log("[App] JSON parse error:", (e as Error).message?.slice(0, 100))
       return extractFilesWithStateMachine(text)
     }
   }
@@ -355,7 +355,7 @@ export function AiAssistant({
               contributes: pkg.contributes,
             }
           } catch (e) {
-            console.log("[v0] Could not parse package.json for config extraction")
+            console.log("[App] Could not parse package.json for config extraction")
           }
         }
 
@@ -558,7 +558,7 @@ export function AiAssistant({
 
       return await response.json()
     } catch (error) {
-      console.error("[v0] Validation error:", error)
+      console.error("[App] Validation error:", error)
       return { valid: true, errors: [] } // Assume valid on error to not block
     }
   }
@@ -630,7 +630,7 @@ export function AiAssistant({
         }
       }
     } catch (error) {
-      console.error("[v0] Auto-fix error:", error)
+      console.error("[App] Auto-fix error:", error)
     }
 
     setIsAutoFixing(false)
@@ -918,7 +918,7 @@ export function AiAssistant({
         </div>
         <div className="min-w-0">
           <h3 className="font-semibold text-white text-sm sm:text-base truncate">AI Extension Generator</h3>
-          <p className="text-[10px] sm:text-xs text-zinc-400">Powered by Claude</p>
+          <p className="text-[10px] sm:text-xs text-zinc-400">Smart VS Code Extension Builder</p>
         </div>
       </div>
 
