@@ -14,7 +14,12 @@ const _lora = Font_Lora({ subsets: ['latin'], weight: ["400","500","600","700"] 
 export const metadata: Metadata = {
   title: "VSCode Extension Builder",
   description: "Build VS Code extensions with templates and AI",
-    generator: 'Next.js'
+  generator: 'Next.js',
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
+  },
 }
 
 export default function RootLayout({
