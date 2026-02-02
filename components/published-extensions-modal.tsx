@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Download, ExternalLink, Loader2, RefreshCw, Package } from "lucide-react"
+import { Import, ExternalLink, Loader2, RefreshCw, Package } from "lucide-react"
 import { getStoredCredentials } from "@/lib/storage"
 
 interface PublishedExtension {
@@ -245,7 +245,7 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport, isImportin
                                 {isImporting ? (
                                   <Loader2 className="w-3 h-3 animate-spin" />
                                 ) : (
-                                  <Download className="w-3 h-3" />
+                                  <Import className="w-3 h-3" />
                                 )}
                               </Button>
                             )}
@@ -334,7 +334,7 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport, isImportin
                                 {isImporting ? (
                                   <Loader2 className="w-3 h-3 animate-spin" />
                                 ) : (
-                                  <Download className="w-3 h-3" />
+                                  <Import className="w-3 h-3" />
                                 )}
                               </Button>
                             )}

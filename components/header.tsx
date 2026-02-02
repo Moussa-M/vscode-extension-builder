@@ -1,6 +1,6 @@
 "use client"
 
-import { Code2, Fingerprint, Check, Copy, Settings } from "lucide-react"
+import { Code2, Fingerprint, Check, Copy, Key } from "lucide-react"
 import { useEffect, useState } from "react"
 import { getVisitorId } from "@/lib/fingerprint"
 import { Badge } from "@/components/ui/badge"
@@ -81,11 +81,11 @@ export function Header({ extensionName, version, settingsOpen, onSettingsOpenCha
                     onClick={() => setSettingsOpen(true)}
                     className="h-8 w-8 text-muted-foreground hover:text-foreground"
                   >
-                    <Settings className="h-4 w-4" />
+                    <Key className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p className="text-xs">API Settings</p>
+                  <p className="text-xs">API Keys & Settings</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

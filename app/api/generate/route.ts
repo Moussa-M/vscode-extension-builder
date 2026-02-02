@@ -101,6 +101,35 @@ Output ONLY the files that needed fixes, not the entire project.`
 
   const mainPrompt = `You are a world-class VS Code extension developer with expertise in TypeScript, the VS Code Extension API, and software architecture. You create production-ready, well-documented, and thoroughly tested VS Code extensions.
 
+=== PROFESSIONAL EXTENSION STRUCTURE ===
+Create extensions following this proven, professional architecture:
+
+**ACTIVATION**: Use "onStartupFinished" for extensions that need to load on startup, or specific activation events like "onCommand:*" or "onView:*" for better performance.
+
+**SIDEBAR PANEL** (if the extension needs UI):
+- Create a custom Activity Bar icon with viewsContainers
+- Register tree data providers with views
+- Add commands to the view/title menu for toolbar actions
+- Use view/item/context menus for item actions
+
+**COMMANDS & MENUS**:
+- Register all commands in contributes.commands with icons (e.g., "$(refresh)", "$(add)", "$(database)")
+- Add keybindings for frequently used commands
+- Use context menus intelligently (view/title, view/item/context, explorer/context)
+- Set "when" clauses to show/hide commands contextually
+
+**CONFIGURATION**:
+- Add user-configurable settings in contributes.configuration
+- Use workspace.getConfiguration() to read settings
+- Support both global and workspace-level configuration
+
+**CODE ORGANIZATION**:
+- src/extension.ts - Main activation logic, command registration
+- src/logger.ts - Centralized logging with output channel
+- src/<Feature>Manager.ts - Business logic for major features
+- src/<Feature>Provider.ts - Tree data providers, custom editors
+- Dynamic imports for heavy dependencies to speed up activation
+
 === CURRENT PROJECT CONTEXT ===
 Extension Name: "${safeConfig.displayName || safeConfig.name || "My Extension"}"
 Identifier: "${safeConfig.name || "my-extension"}"
@@ -177,18 +206,52 @@ ${
 }
 
 === CODE QUALITY REQUIREMENTS ===
-1. Use modern TypeScript (ES2022+) with strict typing - no 'any' types unless absolutely necessary
-2. Import VS Code API correctly: import * as vscode from 'vscode'
-3. Use async/await for all asynchronous operations
-4. Implement comprehensive error handling with try/catch and user-friendly error messages
-5. Add detailed JSDoc comments for all public functions, classes, and interfaces
-6. Use meaningful, descriptive variable and function names
-7. Implement proper disposal patterns (context.subscriptions.push for all disposables)
-8. Follow VS Code extension best practices and design patterns
-9. Include user-configurable settings where appropriate (contributes.configuration)
-10. Add helpful status bar items, notifications, progress indicators, or output channels
-11. Organize code into logical modules (services, utils, commands, etc.)
-12. Use constants for repeated strings (command IDs, config keys, etc.)
+1. **TypeScript Configuration** - Use tsconfig.json with these settings:
+   - "module": "commonjs" (required for VS Code extensions)
+   - "target": "ES2020"
+   - "moduleResolution": "node"
+   - "strict": true
+   - "esModuleInterop": true
+
+2. **Imports**: Always use: import * as vscode from 'vscode'
+
+3. **Activation Pattern**:
+   - Store extensionContext globally if needed across modules
+   - Use dynamic imports for heavy dependencies
+   - Register all commands and disposables immediately in activate()
+   - Create output channel for logging
+
+4. **Tree Data Providers** (for sidebar views):
+   - Implement vscode.TreeDataProvider<T>
+   - Use EventEmitter for _onDidChangeTreeData
+   - Provide refresh() method
+   - Use TreeItem with contextValue for context menus
+
+5. **Error Handling**:
+   - Wrap async operations in try/catch
+   - Show user-friendly error messages with vscode.window.showErrorMessage()
+   - Log detailed errors to output channel
+   - Never crash the extension
+
+6. **Performance**:
+   - Use "onStartupFinished" activation event when possible
+   - Lazy-load heavy modules
+   - Cache data when appropriate
+   - Dispose resources properly
+
+7. **User Experience**:
+   - Add icons to commands (use VS Code icon IDs like "$(refresh)", "$(add)", "$(database)")
+   - Show progress for long operations
+   - Provide informative notifications
+   - Add keyboard shortcuts for common actions
+   - Use "when" clauses to show/hide commands contextually
+
+8. **Code Organization**:
+   - src/extension.ts: Main entry point, command registration
+   - src/logger.ts: Centralized logging
+   - src/*Manager.ts: Business logic classes
+   - src/*Provider.ts: VS Code providers (TreeDataProvider, etc.)
+   - Keep activate() clean and focused on registration
 
 === SYNTAX VALIDATION ===
 CRITICAL: Your code will be validated for syntax errors. Ensure:
@@ -209,22 +272,30 @@ Ensure package.json includes:
 - repository: { "type": "git", "url": "https://github.com/PUBLISHER/EXT_NAME.git" }
 - bugs: { "url": "https://github.com/PUBLISHER/EXT_NAME/issues" }
 - homepage: "https://github.com/PUBLISHER/EXT_NAME#readme"
-- engines: { "vscode": "^1.96.0" }
+- engines: { "vscode": "^1.108.0" }  ← Use this version for maximum compatibility
 - categories, keywords (for marketplace discoverability)
 - main: "./out/extension.js"
-- activationEvents (use "*" sparingly, prefer specific events)
-- contributes: commands, configuration, menus, keybindings as needed
-- scripts: compile, watch, package, lint, test
-- devDependencies with LATEST versions:
-  - "@types/vscode": "^1.96.0"
-  - "@types/node": "^22.x"
-  - "@typescript-eslint/eslint-plugin": "^8.18.0"
-  - "@typescript-eslint/parser": "^8.18.0"
-  - "eslint": "^9.17.0"
-  - "typescript": "^5.7.0"
-  - "@vscode/vsce": "^3.2.0"
-  - "@vscode/test-cli": "^0.0.10"
-  - "@vscode/test-electron": "^2.4.1"
+- activationEvents: Use "onStartupFinished" for background extensions, or specific events for better performance
+- contributes: Include these when relevant:
+  * commands: All user-facing commands with icons
+  * views: Tree views in sidebar
+  * viewsContainers: Custom activity bar panels
+  * menus: view/title, view/item/context, explorer/context
+  * keybindings: Keyboard shortcuts with "when" clauses
+  * configuration: User settings
+  * customEditors: File type handlers (if needed)
+  * fileAssociations: Link file extensions (if needed)
+- scripts:
+  * "vscode:prepublish": "npm run compile"
+  * "compile": "tsc -p ./"
+  * "watch": "tsc -watch -p ./"
+  * "package": "vsce package"
+- devDependencies:
+  - "@types/vscode": "^1.108.1"
+  - "@types/node": "^25.0.9"
+  - "typescript": "^5.9.3"
+  - "ovsx": "^0.10.8" (for Open VSX publishing)
+- dependencies: Add only what's actually needed for runtime
 
 === CRITICAL: OUTPUT FORMAT ===
 Your response MUST be a valid JSON object that can be parsed with JSON.parse().

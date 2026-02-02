@@ -452,6 +452,312 @@ VS Code extension with AI assistance.
       palette: 6,
     },
   },
+  {
+    id: "professional",
+    name: "Professional Extension",
+    description: "Full-featured extension with sidebar, commands, menus, and configuration - production-ready structure",
+    icon: "💼",
+    tags: ["Professional", "Sidebar", "Commands", "Menus", "Configuration"],
+    defaultConfig: {
+      activationEvents: ["onStartupFinished"],
+      contributes: {
+        views: {
+          "myExtension": [
+            {
+              id: "myExplorer",
+              name: "Explorer",
+              when: "true",
+              icon: "$(symbol-folder)"
+            }
+          ]
+        },
+        viewsContainers: {
+          activitybar: [
+            {
+              id: "myExtension",
+              title: "My Extension",
+              icon: "menu.svg"
+            }
+          ]
+        },
+        commands: [
+          { command: "myExtension.refresh", title: "Refresh", icon: "$(refresh)" },
+          { command: "myExtension.addItem", title: "Add Item", icon: "$(add)" },
+          { command: "myExtension.removeItem", title: "Remove Item" },
+          { command: "myExtension.openItem", title: "Open Item" }
+        ],
+        keybindings: [
+          { command: "myExtension.refresh", key: "ctrl+shift+r", mac: "cmd+shift+r", when: "view == myExplorer" }
+        ],
+        menus: {
+          "view/title": [
+            { command: "myExtension.addItem", when: "view == myExplorer", group: "navigation" },
+            { command: "myExtension.refresh", when: "view == myExplorer", group: "navigation" }
+          ],
+          "view/item/context": [
+            { command: "myExtension.removeItem", when: "view == myExplorer && viewItem == item", group: "inline" }
+          ]
+        },
+        configuration: {
+          title: "My Extension",
+          properties: {
+            "myExtension.autoLoad": {
+              type: "boolean",
+              default: true,
+              description: "Automatically load items on startup"
+            }
+          }
+        }
+      },
+    },
+    boilerplate: {
+      "src/extension.ts": `import * as vscode from 'vscode';
+
+let treeDataProvider: MyTreeDataProvider | undefined;
+let extensionContext: vscode.ExtensionContext;
+
+export function activate(context: vscode.ExtensionContext) {
+  extensionContext = context;
+
+  const outputChannel = vscode.window.createOutputChannel('My Extension');
+  outputChannel.appendLine(\`[\${new Date().toISOString()}] Extension activating...\`);
+
+  // Initialize tree data provider
+  treeDataProvider = new MyTreeDataProvider();
+  vscode.window.registerTreeDataProvider('myExplorer', treeDataProvider);
+
+  // Register commands
+  const commands = [
+    vscode.commands.registerCommand('myExtension.refresh', async () => {
+      if (treeDataProvider) {
+        treeDataProvider.refresh();
+        vscode.window.showInformationMessage('Refreshed!');
+      }
+    }),
+
+    vscode.commands.registerCommand('myExtension.addItem', async () => {
+      const name = await vscode.window.showInputBox({
+        prompt: 'Enter item name',
+        placeHolder: 'Item name'
+      });
+
+      if (name && treeDataProvider) {
+        treeDataProvider.addItem(name);
+        vscode.window.showInformationMessage(\`Added: \${name}\`);
+      }
+    }),
+
+    vscode.commands.registerCommand('myExtension.removeItem', (item: TreeItem) => {
+      if (treeDataProvider) {
+        treeDataProvider.removeItem(item);
+        vscode.window.showInformationMessage(\`Removed: \${item.label}\`);
+      }
+    }),
+
+    vscode.commands.registerCommand('myExtension.openItem', (item: TreeItem) => {
+      vscode.window.showInformationMessage(\`Opening: \${item.label}\`);
+    })
+  ];
+
+  commands.forEach(command => context.subscriptions.push(command));
+  context.subscriptions.push(outputChannel);
+
+  outputChannel.appendLine(\`[\${new Date().toISOString()}] Extension activated successfully\`);
+}
+
+export function deactivate() {}
+
+class TreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly label: string,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+  ) {
+    super(label, collapsibleState);
+    this.contextValue = 'item';
+    this.iconPath = new vscode.ThemeIcon('symbol-file');
+  }
+}
+
+class MyTreeDataProvider implements vscode.TreeDataProvider<TreeItem> {
+  private _onDidChangeTreeData: vscode.EventEmitter<TreeItem | undefined | null | void> = new vscode.EventEmitter<TreeItem | undefined | null | void>();
+  readonly onDidChangeTreeData: vscode.Event<TreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+
+  private items: TreeItem[] = [];
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire();
+  }
+
+  addItem(name: string): void {
+    this.items.push(new TreeItem(name, vscode.TreeItemCollapsibleState.None));
+    this.refresh();
+  }
+
+  removeItem(item: TreeItem): void {
+    this.items = this.items.filter(i => i !== item);
+    this.refresh();
+  }
+
+  getTreeItem(element: TreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(element?: TreeItem): Thenable<TreeItem[]> {
+    if (!element) {
+      return Promise.resolve(this.items);
+    }
+    return Promise.resolve([]);
+  }
+}`,
+      "src/logger.ts": `import * as vscode from 'vscode';
+
+class Logger {
+  private outputChannel: vscode.OutputChannel;
+
+  constructor() {
+    this.outputChannel = vscode.window.createOutputChannel('My Extension');
+  }
+
+  info(message: string): void {
+    this.log('INFO', message);
+  }
+
+  error(message: string): void {
+    this.log('ERROR', message);
+  }
+
+  warn(message: string): void {
+    this.log('WARN', message);
+  }
+
+  private log(level: string, message: string): void {
+    const timestamp = new Date().toISOString();
+    this.outputChannel.appendLine(\`[\${timestamp}] [\${level}] \${message}\`);
+  }
+
+  show(): void {
+    this.outputChannel.show();
+  }
+
+  dispose(): void {
+    this.outputChannel.dispose();
+  }
+}
+
+export const logger = new Logger();`,
+      "tsconfig.json": `{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2020",
+    "outDir": "out",
+    "lib": ["ES2020"],
+    "sourceMap": true,
+    "rootDir": "src",
+    "strict": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true
+  },
+  "exclude": ["node_modules", ".vscode-test"]
+}`,
+      ".vscode/launch.json": `{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=\${workspaceFolder}"],
+      "outFiles": ["\${workspaceFolder}/out/**/*.js"],
+      "preLaunchTask": "\${defaultBuildTask}"
+    }
+  ]
+}`,
+      ".vscode/tasks.json": `{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "watch",
+      "problemMatcher": "$tsc-watch",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "never"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}`,
+      ".vscodeignore": `**/.vscode-test/**
+**/out/**/*.map
+**/src/**
+**/.git
+**/.github
+**/.gitignore
+**/.vscode/*.json
+**/tsconfig.json
+**/.eslintrc.json
+**/*.ts
+!**/*.d.ts
+**/node_modules/**
+*.vsix`,
+      "README.md": `# Professional Extension
+
+A full-featured VS Code extension with sidebar, commands, and configuration.
+
+## Features
+
+- Custom sidebar view in Activity Bar
+- Multiple commands with keyboard shortcuts
+- Context menus
+- Configuration options
+- Professional logging
+
+## Usage
+
+1. Open the sidebar (Activity Bar icon)
+2. Use commands from Command Palette:
+   - Add Item
+   - Refresh
+   - Remove Item (context menu)
+
+## Keyboard Shortcuts
+
+- \`Ctrl+Shift+R\` (Mac: \`Cmd+Shift+R\`) - Refresh
+
+## Configuration
+
+- \`myExtension.autoLoad\` - Automatically load items on startup
+
+## Development
+
+\`\`\`bash
+npm install
+npm run compile
+code --extensionDevelopmentPath=.
+\`\`\``,
+      Makefile: MAKEFILE_CONTENT,
+      "menu.svg": `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/>
+  <path d="M7 12h10M7 8h10M7 16h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</svg>`
+    },
+    suggestedConfig: {
+      name: "my-extension",
+      displayName: "My Professional Extension",
+      description: "A professional VS Code extension with full features",
+      publisher: "your-publisher",
+      category: "Other",
+      version: "0.0.1",
+    },
+    suggestedLogo: {
+      variant: "bauhaus",
+      palette: 5,
+    },
+  },
 ]
 
 export const scratchTemplate = templates.find((t) => t.id === "scratch")!
+export const professionalTemplate = templates.find((t) => t.id === "professional")!
