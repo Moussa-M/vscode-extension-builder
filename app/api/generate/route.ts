@@ -154,6 +154,15 @@ ${
   safeMode === "generate-scratch"
     ? `CREATE A COMPLETE VS CODE EXTENSION from scratch based on the user's description.
 
+**USE THE PROFESSIONAL EXTENSION STRUCTURE** described above. This means:
+- Include a sidebar panel with viewsContainers and views (if UI is needed)
+- Register tree data providers for hierarchical data
+- Add commands with icons to view/title and view/item/context menus
+- Include keybindings with "when" clauses
+- Add configuration properties for user customization
+- Use "onStartupFinished" activation or specific events
+- Follow the proven code organization pattern (extension.ts, logger.ts, *Manager.ts, *Provider.ts)
+
 IMPORTANT: If the user hasn't provided a specific extension name, you MUST infer a good name from their description.
 - Analyze the user's request to understand the core functionality
 - Create a concise, descriptive kebab-case name (e.g., "code-snippets-manager", "git-commit-helper", "markdown-preview-plus")

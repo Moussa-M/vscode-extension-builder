@@ -23,11 +23,11 @@ export async function POST(req: Request) {
     }
 
     // Enhance prompt for better icon generation
-    const enhancedPrompt = `Simple, clean, minimalist icon design. ${prompt}. Flat design, vector style, centered composition, suitable for app icon, no text, no background, professional quality`
+    const enhancedPrompt = `Design a clean vector style vscode extension icon with the following prompt: ${prompt}.`
 
     // Use Hugging Face Inference API (free tier)
     // Using stabilityai/stable-diffusion-xl-base-1.0 for better reliability
-    const HF_API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+    const HF_API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
 
     // Note: Hugging Face Inference API is rate-limited on free tier
     // For production, users should add their own HF_TOKEN as env variable
@@ -42,11 +42,11 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         inputs: enhancedPrompt,
         parameters: {
-          negative_prompt: "text, words, letters, watermark, signature, blurry, low quality, photo, realistic",
+          negative_prompt: "repeat, text, words, letters, watermark, signature, blurry, low quality, photo, realistic",
           width: 512,
           height: 512,
-          num_inference_steps: 25,
-          guidance_scale: 7.5,
+          num_inference_steps: 50,
+          guidance_scale: 9,
         },
       }),
     })

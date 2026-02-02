@@ -20,6 +20,7 @@ import { getStoredCredentials } from "@/lib/storage"
 
 interface LogoGeneratorProps {
   extensionName: string
+  extensionDescription?: string
   suggestedLogo?: LogoConfig
   onLogoGenerated?: (dataUrl: string) => void
 }
@@ -42,7 +43,7 @@ export const colorPalettes = [
   { name: "Solarized", colors: ["#002B36", "#073642", "#268BD2", "#2AA198", "#859900"] },
 ]
 
-export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }: LogoGeneratorProps) {
+export function LogoGenerator({ extensionName, extensionDescription, suggestedLogo, onLogoGenerated }: LogoGeneratorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [variant, setVariant] = useState<Variant>(suggestedLogo?.variant || "marble")
   const [size, setSize] = useState(128)
@@ -65,6 +66,7 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const svgContainerRef = useRef<HTMLDivElement>(null)
+  const hasGeneratedPrompt = useRef(false)
 
   const seed = customSeed || extensionName || "my-extension"
   const colors = useCustomColors && customColors.length >= 2 ? customColors : colorPalettes[selectedPalette].colors
@@ -183,8 +185,10 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
     setCustomColors(customColors.filter((_, i) => i !== index))
   }
 
-  const generatePrompt = async () => {
+  const generatePrompt = async (isManual = false) => {
     if (!extensionName) return
+
+    if (!isManual && hasGeneratedPrompt.current) return
 
     setPromptGenerating(true)
     try {
@@ -192,16 +196,19 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
       const apiKey = credentials.anthropicApiKey
 
       if (!apiKey) {
-        setAiPrompt(`Modern ${extensionName} logo with vibrant colors`)
+        const descText = extensionDescription ? ` for ${extensionDescription}` : ""
+        setAiPrompt(`Modern ${extensionName} logo${descText} with vibrant colors`)
         setPromptGenerating(false)
         return
       }
 
+      const safeDescription = (extensionDescription || "").trim().replace(/\s+/g, " ").slice(0, 160)
+      const descText = safeDescription ? ` Function: ${safeDescription}.` : ""
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `Generate a single short prompt (max 20 words) to describe a logo for a VS Code extension called "${extensionName}". Only respond with the prompt text, no quotes or explanation.`,
+          prompt: `Write ONE logo/icon generation prompt (MAX 80 WORDS). Clean, minimalist, flat vector app icon. No text, no letters, no VS Code logo. Extension: "${extensionName}". ${descText} Reply with prompt only.`,
           mode: "add",
           apiKey,
         }),
@@ -225,7 +232,8 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
     } catch (error) {
       console.error("[App] Prompt generation error:", error)
       // Use fallback prompt
-      setAiPrompt(`Modern ${extensionName} logo with vibrant colors`)
+      const descText = extensionDescription ? ` for ${extensionDescription}` : ""
+      setAiPrompt(`Modern ${extensionName} logo${descText} with vibrant colors`)
     } finally {
       setPromptGenerating(false)
     }
@@ -288,12 +296,18 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
     reader.readAsDataURL(file)
   }
 
-  // Auto-generate prompt when extension name changes
+  // Reset prompt generation flag when extension name or description changes
   useEffect(() => {
-    if (extensionName && !aiPrompt && activeTab === "ai") {
-      generatePrompt()
+    hasGeneratedPrompt.current = false
+  }, [extensionName, extensionDescription])
+
+  // Auto-generate prompt when extension name changes or when switching to AI tab
+  useEffect(() => {
+    if (extensionName && !aiPrompt && activeTab === "ai" && !hasGeneratedPrompt.current) {
+      hasGeneratedPrompt.current = true
+      generatePrompt(false) // Auto-generation
     }
-  }, [extensionName, activeTab])
+  }, [extensionName, activeTab, aiPrompt, extensionDescription])
 
   return (
     <>
@@ -658,7 +672,7 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={generatePrompt}
+                        onClick={() => generatePrompt(true)}
                         disabled={promptGenerating || !extensionName}
                         className="h-6 px-2 text-xs"
                       >

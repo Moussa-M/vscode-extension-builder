@@ -126,6 +126,7 @@ export function ConfigPanel({ config, onChange, selectedTemplate, onLogoGenerate
 
       <LogoGenerator
         extensionName={config.name}
+        extensionDescription={config.description}
         suggestedLogo={selectedTemplate.suggestedLogo}
         onLogoGenerated={onLogoGenerated}
       />
