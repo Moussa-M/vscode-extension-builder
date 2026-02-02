@@ -12,7 +12,7 @@ import {
   Wand2,
   Sparkles,
   ChevronRight,
-  File,
+  File as FileIcon,
   User,
   Settings,
   Upload,
@@ -29,6 +29,7 @@ import { getAllUserExtensions, deleteUserExtension, saveUserExtension, type User
 import { motion, AnimatePresence } from "framer-motion"
 import { ExtensionManagerModal } from "./extension-manager-modal"
 import { PublishedExtensionsModal } from "./published-extensions-modal"
+import { useToast } from "@/hooks/use-toast"
 import JSZip from "jszip"
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -67,6 +68,7 @@ function userExtensionToTemplate(
 }
 
 export function TemplateSelector({ templates, selectedTemplate, onSelect }: TemplateSelectorProps) {
+  const { toast } = useToast()
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null)
   const [userExtensions, setUserExtensions] = useState<UserExtension[]>([])
   const [isLoadingExtensions, setIsLoadingExtensions] = useState(true)
@@ -107,6 +109,119 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
     }
   }, [])
 
+  const processZipFile = async (file: File, source: "zip" | "vsix" = "zip") => {
+    const zip = await JSZip.loadAsync(file)
+
+    // Find package.json (might be in root or in extension/ subfolder for VSIX)
+    let packageJsonContent: string | null = null
+    let rootPath = ""
+
+    // Check root first
+    for (const [path, zipEntry] of Object.entries(zip.files)) {
+      if (path.endsWith("package.json") && !zipEntry.dir) {
+        const content = await zipEntry.async("string")
+        try {
+          JSON.parse(content) // Validate it's valid JSON
+          packageJsonContent = content
+          // Get root path (e.g., "my-extension/" or "extension/" or "")
+          rootPath = path.replace("package.json", "")
+          break
+        } catch {
+          continue
+        }
+      }
+    }
+
+    if (!packageJsonContent) {
+      throw new Error("No valid package.json found in archive")
+    }
+
+    const packageJson = JSON.parse(packageJsonContent)
+
+    // Extract all files
+    const boilerplate: Record<string, string> = {}
+    let logoDataUrl: string | undefined
+
+    for (const [path, zipEntry] of Object.entries(zip.files)) {
+      if (zipEntry.dir) continue
+
+      // Remove root path prefix
+      const relativePath = rootPath ? path.replace(rootPath, "") : path
+      if (!relativePath) continue
+
+      // Skip VSIX-specific files and unnecessary files
+      if (
+        relativePath.startsWith("node_modules/") ||
+        relativePath.startsWith(".git/") ||
+        relativePath.endsWith(".vsix") ||
+        relativePath.endsWith(".vsixmanifest") ||
+        relativePath === "[Content_Types].xml" ||
+        relativePath === "extension.vsixmanifest" ||
+        relativePath === ".DS_Store"
+      ) {
+        continue
+      }
+
+      // Check if it's an image
+      if (relativePath.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)$/i)) {
+        const blob = await zipEntry.async("blob")
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(blob)
+        })
+
+        // Store image as data URL in boilerplate
+        boilerplate[relativePath] = dataUrl
+
+        // Check if this is the icon referenced in package.json
+        if (packageJson.icon && relativePath.includes(packageJson.icon.replace("./", ""))) {
+          logoDataUrl = dataUrl
+        }
+        continue
+      }
+
+      // Read text files
+      try {
+        const content = await zipEntry.async("string")
+        boilerplate[relativePath] = content
+      } catch {
+        // Skip binary files
+      }
+    }
+
+    // Create user extension from imported data
+    const newExtension: UserExtension = {
+      id: `imported_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      name: packageJson.name || file.name.replace(/\.(zip|vsix)$/, ""),
+      displayName: packageJson.displayName || packageJson.name || "Imported Extension",
+      description: packageJson.description || `Imported from ${source.toUpperCase()}`,
+      tags: source === "vsix" ? ["published", "imported"] : ["imported"],
+      boilerplate,
+      config: {
+        name: packageJson.name || "",
+        displayName: packageJson.displayName || "",
+        description: packageJson.description || "",
+        publisher: packageJson.publisher || "",
+        version: packageJson.version || "0.0.1",
+        category: packageJson.categories?.[0] || "Other",
+        activationEvents: packageJson.activationEvents || [],
+        contributes: packageJson.contributes || {},
+      },
+      logoDataUrl,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+
+    await saveUserExtension(newExtension)
+    setUserExtensions((prev) => [newExtension, ...prev])
+
+    // Select the imported extension
+    onSelect(userExtensionToTemplate(newExtension))
+
+    return newExtension
+  }
+
   const handleImportZip = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -115,112 +230,19 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
     setImportError(null)
 
     try {
-      const zip = await JSZip.loadAsync(file)
-
-      // Find package.json (might be in root or in a folder)
-      let packageJsonContent: string | null = null
-      let rootPath = ""
-
-      for (const [path, zipEntry] of Object.entries(zip.files)) {
-        if (path.endsWith("package.json") && !zipEntry.dir) {
-          const content = await zipEntry.async("string")
-          try {
-            JSON.parse(content) // Validate it's valid JSON
-            packageJsonContent = content
-            // Get root path (e.g., "my-extension/" or "")
-            rootPath = path.replace("package.json", "")
-            break
-          } catch {
-            continue
-          }
-        }
-      }
-
-      if (!packageJsonContent) {
-        throw new Error("No valid package.json found in ZIP")
-      }
-
-      const packageJson = JSON.parse(packageJsonContent)
-
-      // Extract all text files
-      const boilerplate: Record<string, string> = {}
-      let logoDataUrl: string | undefined
-
-      for (const [path, zipEntry] of Object.entries(zip.files)) {
-        if (zipEntry.dir) continue
-
-        // Remove root path prefix
-        const relativePath = rootPath ? path.replace(rootPath, "") : path
-        if (!relativePath) continue
-
-        // Skip node_modules and other unnecessary files
-        if (
-          relativePath.startsWith("node_modules/") ||
-          relativePath.startsWith(".git/") ||
-          relativePath.endsWith(".vsix") ||
-          relativePath === ".DS_Store"
-        ) {
-          continue
-        }
-
-        // Check if it's an image
-        if (relativePath.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)$/i)) {
-          const blob = await zipEntry.async("blob")
-          const dataUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.readAsDataURL(blob)
-          })
-          
-          // Store image as data URL in boilerplate
-          boilerplate[relativePath] = dataUrl
-          
-          // Check if this is the icon referenced in package.json
-          if (packageJson.icon && relativePath.includes(packageJson.icon.replace("./", ""))) {
-            logoDataUrl = dataUrl
-          }
-          continue
-        }
-
-        // Read text files
-        try {
-          const content = await zipEntry.async("string")
-          boilerplate[relativePath] = content
-        } catch {
-          // Skip binary files
-        }
-      }
-
-      // Create user extension from imported data
-      const newExtension: UserExtension = {
-        id: `imported_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-        name: packageJson.name || file.name.replace(".zip", ""),
-        displayName: packageJson.displayName || packageJson.name || "Imported Extension",
-        description: packageJson.description || "Imported from ZIP",
-        tags: ["imported"],
-        boilerplate,
-        config: {
-          name: packageJson.name || "",
-          displayName: packageJson.displayName || "",
-          description: packageJson.description || "",
-          publisher: packageJson.publisher || "",
-          version: packageJson.version || "0.0.1",
-          category: packageJson.categories?.[0] || "Other",
-          activationEvents: packageJson.activationEvents || [],
-          contributes: packageJson.contributes || {},
-        },
-        logoDataUrl,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }
-
-      await saveUserExtension(newExtension)
-      setUserExtensions((prev) => [newExtension, ...prev])
-
-      // Select the imported extension
-      onSelect(userExtensionToTemplate(newExtension))
+      await processZipFile(file, "zip")
+      toast({
+        title: "Extension imported",
+        description: "ZIP file has been imported successfully",
+      })
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : "Failed to import ZIP")
+      const errorMessage = error instanceof Error ? error.message : "Failed to import ZIP"
+      setImportError(errorMessage)
+      toast({
+        title: "Import failed",
+        description: errorMessage,
+        variant: "destructive",
+      })
     } finally {
       setIsImporting(false)
       // Reset file input
@@ -250,15 +272,15 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
     const ext = filename.split(".").pop()
     switch (ext) {
       case "ts":
-        return <File className="w-3.5 h-3.5 text-blue-400" />
+        return <FileIcon className="w-3.5 h-3.5 text-blue-400" />
       case "json":
-        return <File className="w-3.5 h-3.5 text-yellow-400" />
+        return <FileIcon className="w-3.5 h-3.5 text-yellow-400" />
       case "js":
-        return <File className="w-3.5 h-3.5 text-yellow-300" />
+        return <FileIcon className="w-3.5 h-3.5 text-yellow-300" />
       case "css":
-        return <File className="w-3.5 h-3.5 text-pink-400" />
+        return <FileIcon className="w-3.5 h-3.5 text-pink-400" />
       default:
-        return <File className="w-3.5 h-3.5 text-muted-foreground" />
+        return <FileIcon className="w-3.5 h-3.5 text-muted-foreground" />
     }
   }
 
@@ -528,10 +550,44 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
       <PublishedExtensionsModal
         isOpen={showPublishedModal}
         onClose={() => setShowPublishedModal(false)}
+        isImporting={isImporting}
         onImport={async (vsixUrl) => {
-          // TODO: Implement VSIX download and import
-          console.log("[App] Import VSIX from:", vsixUrl)
-          alert("VSIX import coming soon! For now, download the VSIX manually and import via ZIP.")
+          setIsImporting(true)
+          setImportError(null)
+
+          try {
+            // Download VSIX file
+            const response = await fetch(vsixUrl)
+            if (!response.ok) {
+              throw new Error(`Failed to download VSIX: ${response.statusText}`)
+            }
+
+            const blob = await response.blob()
+
+            // Create File object to reuse existing ZIP import logic
+            const file = new File([blob], "extension.vsix", { type: "application/zip" })
+
+            // Process the VSIX file (VSIX is a ZIP archive)
+            await processZipFile(file, "vsix")
+
+            toast({
+              title: "Extension imported",
+              description: "Published extension has been added to your extensions",
+            })
+
+            setShowPublishedModal(false)
+          } catch (error) {
+            console.error("Failed to import VSIX:", error)
+            const errorMessage = error instanceof Error ? error.message : "Failed to import extension"
+            setImportError(errorMessage)
+            toast({
+              title: "Import failed",
+              description: errorMessage,
+              variant: "destructive",
+            })
+          } finally {
+            setIsImporting(false)
+          }
         }}
       />
     </div>

@@ -31,9 +31,10 @@ interface PublishedExtensionsModalProps {
   isOpen: boolean
   onClose: () => void
   onImport?: (vsixUrl: string) => void
+  isImporting?: boolean
 }
 
-export function PublishedExtensionsModal({ isOpen, onClose, onImport }: PublishedExtensionsModalProps) {
+export function PublishedExtensionsModal({ isOpen, onClose, onImport, isImporting = false }: PublishedExtensionsModalProps) {
   const [vsCodeExtensions, setVsCodeExtensions] = useState<PublishedExtension[]>([])
   const [openVsxExtensions, setOpenVsxExtensions] = useState<PublishedExtension[]>([])
   const [loading, setLoading] = useState(false)
@@ -238,9 +239,14 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleImport(ext.downloadUrl!)}
+                                disabled={isImporting}
                                 title="Import extension"
                               >
-                                <Download className="w-3 h-3" />
+                                {isImporting ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Download className="w-3 h-3" />
+                                )}
                               </Button>
                             )}
                             <Button
@@ -322,9 +328,14 @@ export function PublishedExtensionsModal({ isOpen, onClose, onImport }: Publishe
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleImport(ext.downloadUrl!)}
+                                disabled={isImporting}
                                 title="Import extension"
                               >
-                                <Download className="w-3 h-3" />
+                                {isImporting ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Download className="w-3 h-3" />
+                                )}
                               </Button>
                             )}
                             <Button
