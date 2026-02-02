@@ -7,14 +7,16 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { SettingsModal } from "@/components/settings-modal"
+import { APP_VERSION } from "@/lib/version"
 
 interface HeaderProps {
   extensionName?: string
+  version?: string
   settingsOpen?: boolean
   onSettingsOpenChange?: (open: boolean) => void
 }
 
-export function Header({ extensionName, settingsOpen, onSettingsOpenChange }: HeaderProps) {
+export function Header({ extensionName, version, settingsOpen, onSettingsOpenChange }: HeaderProps) {
   const [visitorId, setVisitorId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [localSettingsOpen, setLocalSettingsOpen] = useState(false)
@@ -44,10 +46,28 @@ export function Header({ extensionName, settingsOpen, onSettingsOpenChange }: He
               <Code2 className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-base sm:text-xl font-bold text-foreground truncate">VSCode Extension Builder</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground truncate">
-                {extensionName ? `Editing: ${extensionName}` : "Build extensions with AI + Templates"}
-              </p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base sm:text-xl font-bold text-foreground truncate">VSCode Extension Builder</h1>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-mono">
+                  {APP_VERSION}
+                </Badge>
+              </div>
+              {extensionName ? (
+                <div className="flex items-center gap-2">
+                  <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                    Editing: {extensionName}
+                  </p>
+                  {version && (
+                    <Badge variant="outline" className="text-[10px] sm:text-xs px-1.5 py-0 h-4 sm:h-5 font-mono">
+                      v{version}
+                    </Badge>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                  Build extensions with AI + Templates
+                </p>
+              )}
             </div>
           </div>
 

@@ -30,6 +30,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { ExtensionManagerModal } from "./extension-manager-modal"
 import { PublishedExtensionsModal } from "./published-extensions-modal"
 import { useToast } from "@/hooks/use-toast"
+import { DEFAULT_EXTENSION_VERSION } from "@/lib/version"
 import JSZip from "jszip"
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -203,7 +204,7 @@ export function TemplateSelector({ templates, selectedTemplate, onSelect }: Temp
         displayName: packageJson.displayName || "",
         description: packageJson.description || "",
         publisher: packageJson.publisher || "",
-        version: packageJson.version || "0.0.1",
+        version: packageJson.version || DEFAULT_EXTENSION_VERSION,
         category: packageJson.categories?.[0] || "Other",
         activationEvents: packageJson.activationEvents || [],
         contributes: packageJson.contributes || {},

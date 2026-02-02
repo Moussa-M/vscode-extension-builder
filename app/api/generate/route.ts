@@ -2,6 +2,7 @@ import { streamText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import type { ExtensionConfig, Template } from "@/lib/types"
 import { makefile } from "@/lib/templates"
+import { DEFAULT_EXTENSION_VERSION } from "@/lib/version"
 
 export async function POST(req: Request) {
   const { prompt, config, template, mode, existingFiles, recoveredFiles, validationErrors, isFixAttempt, apiKey } =
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
     displayName: "My Extension",
     description: "",
     publisher: "publisher",
-    version: "0.0.1",
+    version: DEFAULT_EXTENSION_VERSION,
     category: "Other",
   }
   
@@ -104,7 +105,7 @@ Output ONLY the files that needed fixes, not the entire project.`
 Extension Name: "${safeConfig.displayName || safeConfig.name || "My Extension"}"
 Identifier: "${safeConfig.name || "my-extension"}"
 Publisher: "${safeConfig.publisher || "publisher"}"
-Version: "${safeConfig.version || "0.0.1"}"
+Version: "${safeConfig.version || DEFAULT_EXTENSION_VERSION}"
 Category: "${safeConfig.category || "Other"}"
 Description: "${safeConfig.description || ""}"
 Base Template: ${template?.name || "Custom/Blank"}

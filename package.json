@@ -6,7 +6,11 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "eslint .",
-    "start": "next start"
+    "start": "next start",
+    "version:bump": "bash ./scripts/bump-version.sh",
+    "version:check": "bash ./scripts/pre-commit-version-check.sh",
+    "hooks:setup": "bash ./scripts/setup-git-hooks.sh",
+    "postinstall": "bash ./scripts/setup-git-hooks.sh"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.35",

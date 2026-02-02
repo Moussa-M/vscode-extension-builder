@@ -12,6 +12,7 @@ import { templates } from "@/lib/templates"
 import { getStoredCredentials, saveUserExtension, getUserExtension, initializeUser } from "@/lib/storage"
 import { colorPalettes } from "./logo-generator"
 import { useToast } from "@/hooks/use-toast"
+import { DEFAULT_EXTENSION_VERSION } from "@/lib/version"
 
 export function ExtensionBuilder() {
   const { toast } = useToast()
@@ -23,7 +24,7 @@ export function ExtensionBuilder() {
     displayName: "",
     description: "",
     publisher: "",
-    version: "0.0.1",
+    version: DEFAULT_EXTENSION_VERSION,
     category: "Other",
     activationEvents: [],
     contributes: {},
@@ -335,6 +336,7 @@ export function ExtensionBuilder() {
     <div className="min-h-screen bg-background">
       <Header
         extensionName={config.displayName || config.name}
+        version={config.version}
         settingsOpen={settingsOpen}
         onSettingsOpenChange={setSettingsOpen}
       />
