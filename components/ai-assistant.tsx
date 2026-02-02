@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils"
 import type { ExtensionConfig, Template } from "@/lib/types"
 import { Progress } from "@/components/ui/progress"
 import { motion, AnimatePresence } from "framer-motion"
+import { getStoredCredentials } from "@/lib/storage"
 
 interface AiAssistantProps {
   config: ExtensionConfig
@@ -33,6 +34,7 @@ interface AiAssistantProps {
   onGenerate: (code: Record<string, string>, config?: Partial<ExtensionConfig>) => void
   onConfigUpdate: (config: ExtensionConfig) => void
   onStreamingUpdate?: (allFiles: Record<string, string>, currentFile: string | null) => void
+  onOpenSettings?: () => void
 }
 
 interface ErrorState {
@@ -177,6 +179,7 @@ export function AiAssistant({
   onGenerate,
   onConfigUpdate,
   onStreamingUpdate,
+  onOpenSettings,
 }: AiAssistantProps) {
   const [prompt, setPrompt] = useState("")
   const [isGenerating, setIsGenerating] = useState(false)
@@ -578,6 +581,22 @@ export function AiAssistant({
     setGenerationStage(`Auto-fixing syntax errors (attempt ${fixAttempts + 1}/${MAX_FIX_ATTEMPTS})...`)
     setGenerationProgress(50)
 
+    const credentials = getStoredCredentials()
+    const apiKey = credentials.anthropicApiKey
+
+    if (!apiKey) {
+      setErrorState({
+        message: "API key required. Please add your Anthropic API key in the settings modal.",
+        partialFiles: files,
+        lastPrompt: "Fix the syntax errors",
+        timestamp: Date.now(),
+      })
+      setIsAutoFixing(false)
+      // Open settings modal if callback is provided
+      onOpenSettings?.()
+      return files
+    }
+
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
@@ -590,6 +609,7 @@ export function AiAssistant({
           existingFiles: files,
           validationErrors: errors,
           isFixAttempt: true,
+          apiKey,
         }),
       })
 
@@ -661,6 +681,22 @@ export function AiAssistant({
     let streamedCompletedFiles: Record<string, string> = {}
     const currentPrompt = prompt
 
+    const credentials = getStoredCredentials()
+    const apiKey = credentials.anthropicApiKey
+
+    if (!apiKey) {
+      setErrorState({
+        message: "API key required. Please add your Anthropic API key in the settings modal.",
+        partialFiles: {},
+        lastPrompt: currentPrompt,
+        timestamp: Date.now(),
+      })
+      setIsGenerating(false)
+      // Open settings modal if callback is provided
+      onOpenSettings?.()
+      return
+    }
+
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
@@ -672,6 +708,7 @@ export function AiAssistant({
           mode,
           existingFiles: mode === "add-feature" ? generatedCode : undefined,
           recoveredFiles: Object.keys(recoveredFiles).length > 0 ? recoveredFiles : undefined,
+          apiKey,
         }),
         signal: abortControllerRef.current.signal,
       })

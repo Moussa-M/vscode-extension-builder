@@ -4,6 +4,7 @@ const STORAGE_KEYS = {
   AZURE_TOKEN: "vscode-ext-builder:azure-token",
   OPENVSX_TOKEN: "vscode-ext-builder:openvsx-token",
   PUBLISHER_NAME: "vscode-ext-builder:publisher-name",
+  ANTHROPIC_API_KEY: "vscode-ext-builder:anthropic-api-key",
   TEMPLATE_CONFIG: "vscode-ext-builder:template-config:",
   TEMPLATE_ICON: "vscode-ext-builder:template-icon:",
   ACTIVE_PROJECT_ID: "vscode-ext-builder:active-project-id",
@@ -15,6 +16,7 @@ export interface StoredCredentials {
   azureToken: string
   openVsxToken: string
   publisherName: string
+  anthropicApiKey: string
 }
 
 // Template config persistence
@@ -31,7 +33,7 @@ export interface StoredTemplateConfig {
 
 export function getStoredCredentials(): StoredCredentials {
   if (typeof window === "undefined") {
-    return { githubToken: "", azureToken: "", openVsxToken: "", publisherName: "" }
+    return { githubToken: "", azureToken: "", openVsxToken: "", publisherName: "", anthropicApiKey: "" }
   }
 
   return {
@@ -39,6 +41,7 @@ export function getStoredCredentials(): StoredCredentials {
     azureToken: localStorage.getItem(STORAGE_KEYS.AZURE_TOKEN) || "",
     openVsxToken: localStorage.getItem(STORAGE_KEYS.OPENVSX_TOKEN) || "",
     publisherName: localStorage.getItem(STORAGE_KEYS.PUBLISHER_NAME) || "",
+    anthropicApiKey: localStorage.getItem(STORAGE_KEYS.ANTHROPIC_API_KEY) || "",
   }
 }
 
@@ -76,6 +79,14 @@ export function saveCredentials(credentials: Partial<StoredCredentials>) {
       localStorage.removeItem(STORAGE_KEYS.PUBLISHER_NAME)
     }
   }
+
+  if (credentials.anthropicApiKey !== undefined) {
+    if (credentials.anthropicApiKey) {
+      localStorage.setItem(STORAGE_KEYS.ANTHROPIC_API_KEY, credentials.anthropicApiKey)
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ANTHROPIC_API_KEY)
+    }
+  }
 }
 
 export function clearCredentials() {
@@ -84,6 +95,7 @@ export function clearCredentials() {
   localStorage.removeItem(STORAGE_KEYS.AZURE_TOKEN)
   localStorage.removeItem(STORAGE_KEYS.OPENVSX_TOKEN)
   localStorage.removeItem(STORAGE_KEYS.PUBLISHER_NAME)
+  localStorage.removeItem(STORAGE_KEYS.ANTHROPIC_API_KEY)
 }
 
 export function getStoredTemplateConfig(templateId: string): StoredTemplateConfig | null {

@@ -1,9 +1,10 @@
 import { streamText } from "ai"
+import { createAnthropic } from "@ai-sdk/anthropic"
 import type { ExtensionConfig, Template } from "@/lib/types"
 import { makefile } from "@/lib/templates"
 
 export async function POST(req: Request) {
-  const { prompt, config, template, mode, existingFiles, recoveredFiles, validationErrors, isFixAttempt } =
+  const { prompt, config, template, mode, existingFiles, recoveredFiles, validationErrors, isFixAttempt, apiKey } =
     (await req.json()) as {
       prompt: string
       config?: ExtensionConfig
@@ -13,6 +14,7 @@ export async function POST(req: Request) {
       recoveredFiles?: Record<string, string>
       validationErrors?: Array<{ file: string; line: number; column: number; message: string }>
       isFixAttempt?: boolean
+      apiKey?: string
     }
   
   // If config is not provided (e.g., for simple prompt generation), use defaults
@@ -254,16 +256,34 @@ Remember: The ENTIRE response must be valid JSON. Test mentally that JSON.parse(
 
   const systemPrompt = isFixAttempt ? fixAttemptPrompt : mainPrompt
 
+  // Validate API key
+  if (!apiKey) {
+    return Response.json(
+      {
+        message: "API key is required. Please add your Anthropic API key in settings.",
+        files: {},
+        commands: [],
+        activationEvents: [],
+      },
+      { status: 401 },
+    )
+  }
+
+  // Create Anthropic client with user's API key
+  const anthropic = createAnthropic({
+    apiKey: apiKey,
+  })
+
   try {
     const result = streamText({
-      model: "anthropic/sonnet-4-20250514",
+      model: anthropic("claude-sonnet-4-20250514"),
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: isFixAttempt ? "Fix the syntax errors listed above." : prompt },
       ],
       maxTokens: 16000,
       temperature: isFixAttempt ? 0.3 : 0.7,
-    })
+    } as any)
 
     return result.toTextStreamResponse()
   } catch (error) {

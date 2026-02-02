@@ -34,6 +34,7 @@ export function ExtensionBuilder() {
   const [streamingContent, setStreamingContent] = useState("")
   const [streamingFiles, setStreamingFiles] = useState<Record<string, string>>({})
   const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>()
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     initializeUser()
@@ -332,7 +333,11 @@ export function ExtensionBuilder() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header extensionName={config.displayName || config.name} />
+      <Header
+        extensionName={config.displayName || config.name}
+        settingsOpen={settingsOpen}
+        onSettingsOpenChange={setSettingsOpen}
+      />
       <main className="w-full max-w-none px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
         <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] xl:grid-cols-[400px_1fr] gap-4 sm:gap-6 lg:gap-8">
           <div className="space-y-4 sm:space-y-6">
@@ -392,6 +397,7 @@ export function ExtensionBuilder() {
                 onGenerate={handleAiGenerate}
                 onConfigUpdate={handleConfigUpdate}
                 onStreamingUpdate={handleStreamingUpdate}
+                onOpenSettings={() => setSettingsOpen(true)}
               />
             )}
           </div>

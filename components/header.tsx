@@ -1,18 +1,27 @@
 "use client"
 
-import { Code2, Fingerprint, Check, Copy } from "lucide-react"
+import { Code2, Fingerprint, Check, Copy, Settings } from "lucide-react"
 import { useEffect, useState } from "react"
 import { getVisitorId } from "@/lib/fingerprint"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { SettingsModal } from "@/components/settings-modal"
 
 interface HeaderProps {
   extensionName?: string
+  settingsOpen?: boolean
+  onSettingsOpenChange?: (open: boolean) => void
 }
 
-export function Header({ extensionName }: HeaderProps) {
+export function Header({ extensionName, settingsOpen, onSettingsOpenChange }: HeaderProps) {
   const [visitorId, setVisitorId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [localSettingsOpen, setLocalSettingsOpen] = useState(false)
+
+  // Use controlled state if provided, otherwise use local state
+  const isSettingsOpen = settingsOpen !== undefined ? settingsOpen : localSettingsOpen
+  const setSettingsOpen = onSettingsOpenChange || setLocalSettingsOpen
 
   useEffect(() => {
     getVisitorId().then(setVisitorId)
@@ -42,37 +51,59 @@ export function Header({ extensionName }: HeaderProps) {
             </div>
           </div>
 
-          {visitorId && (
+          <div className="flex items-center gap-2">
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Badge
-                    variant="outline"
-                    className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 font-mono text-[10px] sm:text-xs cursor-pointer hover:bg-accent transition-colors flex-shrink-0"
-                    onClick={copyToClipboard}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSettingsOpen(true)}
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
                   >
-                    {copied ? (
-                      <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-green-500" />
-                    ) : (
-                      <Fingerprint className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-muted-foreground" />
-                    )}
-                    <span className={`hidden sm:inline ${copied ? "text-green-500" : "text-muted-foreground"}`}>
-                      {copied ? "Copied!" : visitorId.slice(0, 8)}
-                    </span>
-                  </Badge>
+                    <Settings className="h-4 w-4" />
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <div className="flex items-center gap-2">
-                    <p className="font-mono text-xs">{visitorId}</p>
-                    <Copy className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                  <p className="text-muted-foreground text-xs mt-1">Click to copy your device ID</p>
+                  <p className="text-xs">API Settings</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          )}
+
+            {visitorId && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="outline"
+                      className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 font-mono text-[10px] sm:text-xs cursor-pointer hover:bg-accent transition-colors flex-shrink-0"
+                      onClick={copyToClipboard}
+                    >
+                      {copied ? (
+                        <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-green-500" />
+                      ) : (
+                        <Fingerprint className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-muted-foreground" />
+                      )}
+                      <span className={`hidden sm:inline ${copied ? "text-green-500" : "text-muted-foreground"}`}>
+                        {copied ? "Copied!" : visitorId.slice(0, 8)}
+                      </span>
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="flex items-center gap-2">
+                      <p className="font-mono text-xs">{visitorId}</p>
+                      <Copy className="w-3 h-3 text-muted-foreground" />
+                    </div>
+                    <p className="text-muted-foreground text-xs mt-1">Click to copy your device ID</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
         </div>
       </div>
+
+      <SettingsModal open={isSettingsOpen} onOpenChange={setSettingsOpen} />
     </header>
   )
 }

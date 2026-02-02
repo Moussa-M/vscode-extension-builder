@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { RefreshCw, Palette, Sparkles, ChevronDown, Check, Square, Circle, RotateCcw, Wand2, Loader2, Maximize2, Upload } from "lucide-react"
 import type { LogoConfig } from "@/lib/types"
+import { getStoredCredentials } from "@/lib/storage"
 
 interface LogoGeneratorProps {
   extensionName: string
@@ -187,12 +188,22 @@ export function LogoGenerator({ extensionName, suggestedLogo, onLogoGenerated }:
 
     setPromptGenerating(true)
     try {
+      const credentials = getStoredCredentials()
+      const apiKey = credentials.anthropicApiKey
+
+      if (!apiKey) {
+        setAiPrompt(`Modern ${extensionName} logo with vibrant colors`)
+        setPromptGenerating(false)
+        return
+      }
+
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: `Generate a single short prompt (max 20 words) to describe a logo for a VS Code extension called "${extensionName}". Only respond with the prompt text, no quotes or explanation.`,
           mode: "add",
+          apiKey,
         }),
       })
 
