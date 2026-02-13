@@ -12,12 +12,12 @@
  * Main application version
  * This should match the version in package.json
  */
-export const APP_VERSION = "2.0.0" // x-release-please-version
+export const APP_VERSION = "0.1.1" // x-release-please-version
 
 /**
  * Default version for newly created extensions
  */
-export const DEFAULT_EXTENSION_VERSION = "0.0.1"
+export const DEFAULT_EXTENSION_VERSION = "0.1.1"
 
 /**
  * Version format validation
