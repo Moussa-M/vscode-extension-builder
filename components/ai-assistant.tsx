@@ -449,6 +449,46 @@ export function AiAssistant({
     return null
   }
 
+  const bestEffortFormatJson = (incomplete: string): string => {
+    // Try parsing as-is first (complete JSON)
+    try {
+      return JSON.stringify(JSON.parse(incomplete), null, 2)
+    } catch {}
+
+    // For incomplete JSON, try closing open braces/brackets
+    let patched = incomplete.trimEnd()
+    // Remove trailing comma if present
+    if (patched.endsWith(",")) patched = patched.slice(0, -1)
+
+    // Count unclosed braces and brackets
+    let braces = 0
+    let brackets = 0
+    let inStr = false
+    let esc = false
+    for (const ch of patched) {
+      if (esc) { esc = false; continue }
+      if (ch === "\\") { esc = true; continue }
+      if (ch === '"') { inStr = !inStr; continue }
+      if (inStr) continue
+      if (ch === "{") braces++
+      else if (ch === "}") braces--
+      else if (ch === "[") brackets++
+      else if (ch === "]") brackets--
+    }
+
+    // If we're inside an unterminated string, close it
+    if (inStr) patched += '"'
+    // Close open brackets/braces
+    for (let i = 0; i < brackets; i++) patched += "]"
+    for (let i = 0; i < braces; i++) patched += "}"
+
+    try {
+      return JSON.stringify(JSON.parse(patched), null, 2)
+    } catch {}
+
+    return incomplete
+  }
+
   const extractPartialFiles = (
     text: string,
   ): {
@@ -512,15 +552,8 @@ export function AiAssistant({
       }
 
       if (foundEnd && content.length > 0) {
-        // Format JSON files with proper line breaks
         if (filename.endsWith(".json")) {
-          try {
-            const jsonContent = JSON.parse(content)
-            completedFiles[filename] = JSON.stringify(jsonContent, null, 2)
-          } catch (e) {
-            // If parsing fails, keep original content
-            completedFiles[filename] = content
-          }
+          completedFiles[filename] = bestEffortFormatJson(content)
         } else {
           completedFiles[filename] = content
         }
@@ -528,14 +561,8 @@ export function AiAssistant({
 
       if (i === matchArray.length - 1) {
         currentFile = filename
-        // Format current content if it's a JSON file
         if (filename.endsWith(".json")) {
-          try {
-            const jsonContent = JSON.parse(content)
-            currentContent = JSON.stringify(jsonContent, null, 2)
-          } catch (e) {
-            currentContent = content
-          }
+          currentContent = bestEffortFormatJson(content)
         } else {
           currentContent = content
         }
@@ -570,16 +597,7 @@ export function AiAssistant({
     files: Record<string, string>,
     errors: Array<{ file: string; line: number; column: number; message: string }>,
   ) => {
-    if (fixAttempts >= MAX_FIX_ATTEMPTS) {
-      setGenerationStage("Max fix attempts reached. Manual review needed.")
-      setIsAutoFixing(false)
-      return files
-    }
-
     setIsAutoFixing(true)
-    setFixAttempts((prev) => prev + 1)
-    setGenerationStage(`Auto-fixing syntax errors (attempt ${fixAttempts + 1}/${MAX_FIX_ATTEMPTS})...`)
-    setGenerationProgress(50)
 
     const credentials = getStoredCredentials()
     const apiKey = credentials.anthropicApiKey
@@ -592,48 +610,79 @@ export function AiAssistant({
         timestamp: Date.now(),
       })
       setIsAutoFixing(false)
-      // Open settings modal if callback is provided
       onOpenSettings?.()
       return files
     }
 
-    try {
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: "Fix the syntax errors",
-          config,
-          template: selectedTemplate,
-          mode: "modify",
-          existingFiles: files,
-          validationErrors: errors,
-          isFixAttempt: true,
-          apiKey,
-        }),
-      })
+    let currentFiles = { ...files }
+    let currentErrors = errors
+    let previousErrorKey = ""
 
-      if (!response.ok) throw new Error("Fix attempt failed")
+    for (let attempt = 0; attempt < MAX_FIX_ATTEMPTS; attempt++) {
+      setFixAttempts(attempt + 1)
+      setGenerationStage(`Auto-fixing syntax errors (attempt ${attempt + 1}/${MAX_FIX_ATTEMPTS})...`)
+      setGenerationProgress(50 + attempt * 15)
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      let fullText = ""
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          fullText += decoder.decode(value, { stream: true })
-        }
+      // Detect repeated identical errors to bail early
+      const errorKey = currentErrors
+        .map((e) => `${e.file}:${e.line}:${e.column}:${e.message}`)
+        .sort()
+        .join("|")
+      if (errorKey === previousErrorKey) {
+        console.log("[App] Same errors after fix attempt, stopping auto-fix")
+        setGenerationStage("Auto-fix could not resolve errors. Manual review needed.")
+        break
       }
+      previousErrorKey = errorKey
 
-      const result = parseAIResponse(fullText)
+      try {
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: "Fix the syntax errors",
+            config,
+            template: selectedTemplate,
+            mode: "modify",
+            existingFiles: currentFiles,
+            validationErrors: currentErrors,
+            isFixAttempt: true,
+            apiKey,
+          }),
+        })
 
-      if (result && Object.keys(result.files).length > 0) {
-        // Merge fixed files with existing files
-        const mergedFiles = { ...files, ...result.files }
+        if (!response.ok) throw new Error("Fix attempt failed")
 
-        // Validate the fixed files
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder()
+        let fullText = ""
+
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            fullText += decoder.decode(value, { stream: true })
+          }
+        }
+
+        const result = parseAIResponse(fullText)
+
+        if (!result || Object.keys(result.files).length === 0) {
+          console.log("[App] Auto-fix returned no parseable files, stopping")
+          setGenerationStage("Auto-fix response could not be parsed. Manual review needed.")
+          break
+        }
+
+        // Only merge files that were flagged with errors, preserving all others
+        const errorFileNames = new Set(currentErrors.map((e) => e.file))
+        const mergedFiles = { ...currentFiles }
+        for (const [path, content] of Object.entries(result.files)) {
+          if (errorFileNames.has(path) && content && content.length > 0) {
+            mergedFiles[path] = content
+          }
+        }
+
+        // Validate the merged files
         setGenerationStage("Validating fixes...")
         const revalidation = await validateFiles(mergedFiles)
 
@@ -643,18 +692,22 @@ export function AiAssistant({
           setValidationErrors([])
           setIsAutoFixing(false)
           return mergedFiles
-        } else {
-          // Still has errors, try again
-          setValidationErrors(revalidation.errors)
-          return attemptAutoFix(mergedFiles, revalidation.errors)
         }
+
+        // Update for next iteration
+        currentFiles = mergedFiles
+        currentErrors = revalidation.errors
+        setValidationErrors(revalidation.errors)
+      } catch (error) {
+        console.error("[App] Auto-fix error:", error)
+        setGenerationStage("Auto-fix failed. Manual review needed.")
+        break
       }
-    } catch (error) {
-      console.error("[App] Auto-fix error:", error)
     }
 
+    setGenerationStage("Max fix attempts reached. Manual review needed.")
     setIsAutoFixing(false)
-    return files
+    return currentFiles
   }
 
   const handleGenerate = async () => {

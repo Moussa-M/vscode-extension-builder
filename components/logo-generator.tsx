@@ -13,7 +13,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { RefreshCw, Palette, Sparkles, ChevronDown, Check, Square, Circle, RotateCcw, Wand2, Loader2, Maximize2, Upload } from "lucide-react"
 import type { LogoConfig } from "@/lib/types"
 import { getStoredCredentials } from "@/lib/storage"
@@ -312,7 +313,8 @@ export function LogoGenerator({ extensionName, extensionDescription, suggestedLo
   return (
     <>
       <Dialog open={isExpanded} onOpenChange={setIsExpanded}>
-        <DialogContent className="max-w-2xl p-8">
+        <DialogContent className="max-w-2xl p-8" aria-describedby={undefined}>
+          <VisuallyHidden><DialogTitle>Logo Preview</DialogTitle></VisuallyHidden>
           <div className="flex justify-center">
             {uploadedImage ? (
               <img 

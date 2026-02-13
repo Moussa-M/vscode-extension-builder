@@ -63,62 +63,6 @@ function validateTypeScript(filename: string, content: string): ValidationError[
     })
   }
 
-  // Additional syntax checks via regex for common issues
-  const lines = content.split("\n")
-
-  // Check for unbalanced braces
-  let braceCount = 0
-  let bracketCount = 0
-  let parenCount = 0
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    // Skip strings and comments for brace counting
-    const cleanLine = line
-      .replace(/\/\/.*$/, "")
-      .replace(/"[^"]*"/g, "")
-      .replace(/'[^']*'/g, "")
-
-    for (const char of cleanLine) {
-      if (char === "{") braceCount++
-      if (char === "}") braceCount--
-      if (char === "[") bracketCount++
-      if (char === "]") bracketCount--
-      if (char === "(") parenCount++
-      if (char === ")") parenCount--
-    }
-  }
-
-  if (braceCount !== 0) {
-    errors.push({
-      file: filename,
-      line: lines.length,
-      column: 1,
-      message: `Unbalanced braces: ${braceCount > 0 ? "missing" : "extra"} ${Math.abs(braceCount)} closing brace(s)`,
-      severity: "error",
-    })
-  }
-
-  if (bracketCount !== 0) {
-    errors.push({
-      file: filename,
-      line: lines.length,
-      column: 1,
-      message: `Unbalanced brackets: ${bracketCount > 0 ? "missing" : "extra"} ${Math.abs(bracketCount)} closing bracket(s)`,
-      severity: "error",
-    })
-  }
-
-  if (parenCount !== 0) {
-    errors.push({
-      file: filename,
-      line: lines.length,
-      column: 1,
-      message: `Unbalanced parentheses: ${parenCount > 0 ? "missing" : "extra"} ${Math.abs(parenCount)} closing paren(s)`,
-      severity: "error",
-    })
-  }
-
   return errors
 }
 

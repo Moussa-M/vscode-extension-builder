@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const version = (pkg.version as string) || "0.0.1";
+    let version = (pkg.version as string) || "0.0.1";
     const displayName = (pkg.displayName as string) || extensionName;
     const description = ((pkg.description as string) || "").replace(/\\n/g, "\n").trim();
     const categories = (pkg.categories as string[]) || ["Other"];
@@ -151,11 +151,11 @@ export async function POST(req: NextRequest) {
 
     zip.file("extension.vsixmanifest", manifest);
 
-    const vsixFilename = `${publisher}.${extensionName}-${version}.vsix`;
+    let vsixFilename = `${publisher}.${extensionName}-${version}.vsix`;
     const vsixPath = path.join(tempDir, vsixFilename);
 
     console.log("[OpenVSX] Generating VSIX...");
-    const vsixBuffer = await zip.generateAsync({
+    let vsixBuffer = await zip.generateAsync({
       type: "nodebuffer",
       compression: "DEFLATE",
       compressionOptions: { level: 9 },
@@ -170,86 +170,129 @@ export async function POST(req: NextRequest) {
       "bytes"
     );
 
-    const vsixBase64 = vsixBuffer.toString("base64");
+    // Helper to rebuild VSIX with a new version
+    async function rebuildVsixWithVersion(newVersion: string) {
+      version = newVersion;
+      pkg.version = newVersion;
+      ext!.file("package.json", JSON.stringify(pkg, null, 2));
 
-    // If OpenVSX token provided, publish using REST API
+      const existingManifest = zip.file("extension.vsixmanifest");
+      if (existingManifest) {
+        const manifestContent = await existingManifest.async("string");
+        zip.file(
+          "extension.vsixmanifest",
+          manifestContent.replace(/Version="[^"]*"/, `Version="${newVersion}"`)
+        );
+      }
+
+      vsixBuffer = await zip.generateAsync({
+        type: "nodebuffer",
+        compression: "DEFLATE",
+        compressionOptions: { level: 9 },
+      });
+      vsixFilename = `${publisher}.${extensionName}-${newVersion}.vsix`;
+      await fs.writeFile(vsixPath, vsixBuffer);
+    }
+
+    // If OpenVSX token provided, pre-check version and publish with retry
     if (openVsxToken) {
       console.log("[OpenVSX] Token provided, publishing via REST API...");
 
+      // Pre-check: see if this version already exists
       try {
-        // Use OpenVSX REST API to publish
-        const publishResponse = await fetch(
-          `https://open-vsx.org/api/-/publish`,
-          {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${openVsxToken}`,
-            },
-            body: vsixBuffer,
-          }
+        const checkRes = await fetch(
+          `https://open-vsx.org/api/${publisher}/${extensionName}/${version}`
         );
-
-        if (!publishResponse.ok) {
-          const errorText = await publishResponse.text();
-          throw new Error(
-            `OpenVSX API error ${publishResponse.status}: ${errorText}`
-          );
+        if (checkRes.ok) {
+          const bumped = incrementVersion(version);
+          console.log(`[OpenVSX] Version ${version} already exists, bumping to ${bumped}`);
+          await rebuildVsixWithVersion(bumped);
         }
-
-        console.log("[OpenVSX] Published successfully!");
-
-        return NextResponse.json({
-          success: true,
-          published: true,
-          message: "Extension published successfully to Open VSX Registry!",
-          url: `https://open-vsx.org/extension/${publisher}/${extensionName}`,
-          vsixBase64,
-          vsixFilename,
-        });
-      } catch (publishError: unknown) {
-        const errorMsg =
-          publishError instanceof Error
-            ? publishError.message
-            : String(publishError);
-        console.error("[OpenVSX] Publish failed:", errorMsg);
-
-        // Check for specific error conditions
-        const isVersionConflict =
-          errorMsg.includes("already exists") || errorMsg.includes("version");
-        const isLicenseError = errorMsg.includes("license");
-        const isNamespaceError =
-          errorMsg.includes("namespace") || errorMsg.includes("Namespace");
-
-        let suggestion =
-          "Download the VSIX and publish manually or check your OpenVSX token permissions.";
-        let errorMessage = `Auto-publish failed: ${errorMsg}`;
-
-        if (isLicenseError) {
-          suggestion =
-            "The extension is missing a license. Ensure package.json has a 'license' field and a LICENSE file exists.";
-          errorMessage = "Extension missing required license";
-        } else if (isNamespaceError) {
-          suggestion = `Create the '${publisher}' namespace at https://open-vsx.org/user-settings/namespaces before publishing.`;
-          errorMessage = `Namespace '${publisher}' does not exist`;
-        } else if (isVersionConflict) {
-          suggestion = `Version ${version} already exists. Update the version number in package.json (e.g., to ${incrementVersion(
-            version
-          )}) and try again.`;
-          errorMessage = `Version ${version} already exists`;
-        }
-
-        // Return VSIX for manual upload as fallback
-        return NextResponse.json({
-          success: true,
-          published: false,
-          error: errorMessage,
-          suggestion,
-          vsixBase64,
-          vsixFilename,
-          manualUploadUrl: "https://open-vsx.org/user-settings/extensions",
-          cliCommand: `npx ovsx publish ${vsixFilename} -p <your-token>`,
-        });
+      } catch (e) {
+        console.log("[OpenVSX] Could not pre-check version, proceeding");
       }
+
+      // Attempt publish with retry on version conflict
+      const MAX_VERSION_RETRIES = 5;
+      let lastError = "";
+
+      for (let attempt = 0; attempt < MAX_VERSION_RETRIES; attempt++) {
+        try {
+          console.log(`[OpenVSX] Publishing attempt ${attempt + 1}, version ${version}...`);
+          const publishResponse = await fetch(
+            `https://open-vsx.org/api/-/publish`,
+            {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${openVsxToken}`,
+              },
+              body: vsixBuffer,
+            }
+          );
+
+          if (publishResponse.ok) {
+            console.log("[OpenVSX] Published successfully!");
+            return NextResponse.json({
+              success: true,
+              published: true,
+              message: `Extension published successfully to Open VSX Registry! (version ${version})`,
+              url: `https://open-vsx.org/extension/${publisher}/${extensionName}`,
+              version,
+              vsixBase64: vsixBuffer.toString("base64"),
+              vsixFilename,
+            });
+          }
+
+          const errorText = await publishResponse.text();
+          lastError = `OpenVSX API error ${publishResponse.status}: ${errorText}`;
+
+          const isVersionConflict =
+            errorText.includes("already exists") || errorText.includes("version");
+
+          if (isVersionConflict && attempt < MAX_VERSION_RETRIES - 1) {
+            const bumped = incrementVersion(version);
+            console.log(`[OpenVSX] Version conflict, bumping ${version} -> ${bumped} and retrying...`);
+            await rebuildVsixWithVersion(bumped);
+            continue;
+          }
+
+          // Not a version conflict, break out
+          break;
+        } catch (publishError: unknown) {
+          lastError = publishError instanceof Error ? publishError.message : String(publishError);
+          console.error("[OpenVSX] Publish error:", lastError);
+          break;
+        }
+      }
+
+      // All retries exhausted or non-version error
+      const isLicenseError = lastError.includes("license");
+      const isNamespaceError =
+        lastError.includes("namespace") || lastError.includes("Namespace");
+
+      let suggestion =
+        "Download the VSIX and publish manually or check your OpenVSX token permissions.";
+      let errorMessage = `Auto-publish failed: ${lastError}`;
+
+      if (isLicenseError) {
+        suggestion =
+          "The extension is missing a license. Ensure package.json has a 'license' field and a LICENSE file exists.";
+        errorMessage = "Extension missing required license";
+      } else if (isNamespaceError) {
+        suggestion = `Create the '${publisher}' namespace at https://open-vsx.org/user-settings/namespaces before publishing.`;
+        errorMessage = `Namespace '${publisher}' does not exist`;
+      }
+
+      return NextResponse.json({
+        success: true,
+        published: false,
+        error: errorMessage,
+        suggestion,
+        vsixBase64: vsixBuffer.toString("base64"),
+        vsixFilename,
+        manualUploadUrl: "https://open-vsx.org/user-settings/extensions",
+        cliCommand: `npx ovsx publish ${vsixFilename} -p <your-token>`,
+      });
     }
 
     // No token - return VSIX for manual upload
@@ -261,7 +304,7 @@ export async function POST(req: NextRequest) {
       published: false,
       message:
         "VSIX created! Provide an OpenVSX token for auto-publishing, or download and publish manually.",
-      vsixBase64,
+      vsixBase64: vsixBuffer.toString("base64"),
       vsixFilename,
       manualUploadUrl: "https://open-vsx.org/user-settings/extensions",
       cliCommand: `npx ovsx publish ${vsixFilename} -p <your-token>`,
